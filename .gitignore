@@ -1,0 +1,27 @@
+# secrets
+.env
+# personal data / things Jarvis learned on this PC
+memory.json
+routines.json
+aliases.json
+apps.json
+devices.json
+tinytuya.json
+tuya-raw.json
+snapshot.json
+timers.json
+routine_windows.json
+close_history.json
+update_state.json
+# logs, caches, generated files
+jarvis.log
+update.log
+__pycache__/
+.venv/
+.hud-profile/
+backups/
+dist/
+jarvis.ico
+# wake word: only the .onnx models are used
+models/*.tflite
+models/silero_vad.onnx

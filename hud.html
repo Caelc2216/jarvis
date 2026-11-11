@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jarvis</title>
+<link rel="icon" type="image/png" href="/icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ground: #070B10; --panel: #0D141C; --line: #1C2A36; --text: #E6F1F7; --muted: #8AA1B1;
+    --accent: #3FD4FF; --warm: #FFB547; --idle: #6F8797; --c: var(--accent);
+    --mono: 'JetBrains Mono', Consolas, monospace; --sans: 'Space Grotesk', 'Segoe UI', system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--ground); color: var(--text); font-family: var(--sans);
+               overflow: hidden; user-select: none; }
+  body.idle { --c: var(--idle); } body.thinking { --c: var(--warm); }
+
+  .app { height: 100%; display: grid; gap: 18px; padding: 20px 22px;
+         grid-template-columns: 1fr; grid-template-rows: auto 1fr auto; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .word { font-weight: 700; letter-spacing: .32em; font-size: 16px; }
+  .chip { font-family: var(--mono); font-size: 11px; letter-spacing: .08em; color: var(--muted);
+          border: 1px solid var(--line); border-radius: 999px; padding: 5px 10px; }
+  .chip:empty { display: none; }
+  .meta { display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 12px; color: var(--muted); white-space: nowrap; }
+  .chip, .word { white-space: nowrap; }
+  @media (max-width: 899px) { #brain { display: none; } .word { letter-spacing: .26em; } }
+  .dot { width: 8px; height: 8px; border-radius: 4px; background: var(--c); transition: background .3s; }
+  .clock { color: var(--text); font-size: 15px; margin-left: 10px; }
+
+  .center { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; min-height: 0; }
+  .orb { width: min(300px, 62vw, 52vh); aspect-ratio: 1; }
+  .orb svg { width: 100%; height: 100%; overflow: visible; }
+  .orb circle, .orb g { transition: stroke .4s, fill .4s; }
+  .r1, .r2, .core, .ping { transform-origin: 150px 150px; transform-box: view-box; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes spinback { to { transform: rotate(-360deg); } }
+  @keyframes breathe { 0%,100% { transform: scale(1); } 50% { transform: scale(1.07); } }
+  @keyframes pulse { 0% { transform: scale(.7); opacity: .7; } 100% { transform: scale(1.25); opacity: 0; } }
+  .r1 { animation: spin 40s linear infinite; } .r2 { animation: spinback 60s linear infinite; }
+  .core { animation: breathe 5s ease-in-out infinite; } .ping { opacity: 0; }
+  body.listening .r1 { animation-duration: 14s; } body.listening .r2 { animation-duration: 20s; }
+  body.listening .ping { animation: pulse 1.6s ease-out infinite; }
+  body.thinking .r1 { animation-duration: 2.2s; } body.thinking .r2 { animation-duration: 3s; }
+  body.speaking .r1 { animation-duration: 9s; } body.speaking .r2 { animation-duration: 12s; }
+  body.speaking .core { animation-duration: .9s; }
+  .levelring { transform-origin: 150px 150px; transform-box: view-box; transition: transform .08s linear, opacity .2s; opacity: 0; }
+  body.listening .levelring { opacity: .9; }
+
+  .label { font-family: var(--mono); font-size: 13px; letter-spacing: .26em; color: var(--c); transition: color .3s; }
+  .caption { margin: 0; max-width: 560px; min-height: 3em; text-align: center; font-size: 17px; line-height: 1.45; }
+
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 12px 16px; }
+  .k { font-family: var(--mono); font-size: 11px; letter-spacing: .14em; color: var(--muted); }
+  .talk { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .talk .v { font-size: 14px; margin-top: 4px; line-height: 1.35; overflow: hidden; display: -webkit-box;
+             -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .talk .card:first-child .v:empty::after { content: "—"; color: var(--muted); }
+  .jarvis-k { color: var(--accent); }
+
+  .side { display: none; flex-direction: column; gap: 12px; min-width: 0; }
+  .np { display: flex; align-items: center; gap: 12px; }
+  .np .art { width: 46px; height: 46px; border-radius: 10px; background: #11202B; display: grid; place-items: center; flex-shrink: 0; }
+  .np .t { font-weight: 600; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .np .a { font-size: 12.5px; color: var(--muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .np .st { font-family: var(--mono); font-size: 11px; color: var(--warm); margin-top: 3px; }
+  ol.log { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 9px;
+           font-family: var(--mono); font-size: 12px; }
+  ol.log li { display: flex; gap: 10px; } ol.log .t { color: var(--accent); flex-shrink: 0; } ol.log .x { color: #CFDDE6; }
+  ol.log:empty::after { content: "Nothing yet."; color: var(--muted); }
+  .big { font-size: 18px; font-weight: 600; margin-top: 4px; }
+  .sub { font-family: var(--mono); font-size: 12px; color: var(--muted); margin-top: 3px; }
+  .tags { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+  .tags span { font-size: 12.5px; padding: 5px 9px; border-radius: 8px; background: #11202B; color: #CFEFFF; }
+
+  /* Wide window: the full HUD with side panels. */
+  @media (min-width: 900px) {
+    .app { grid-template-columns: 260px minmax(0, 1fr) 290px; grid-template-rows: auto 1fr auto; padding: 26px 34px; gap: 22px 28px; }
+    header { grid-column: 1 / -1; } .talk { grid-column: 1 / -1; }
+    .side { display: flex; } .orb { width: min(400px, 40vw, 58vh); }
+    .caption { font-size: 21px; } .word { font-size: 20px; }
+  }
+  /* Short widget: drop the transcript cards. */
+  @media (max-height: 520px) and (max-width: 899px) { .talk { display: none; } }
+</style>
+</head>
+<body class="idle">
+<div class="app">
+  <header>
+    <div class="brand">
+      <svg width="28" height="28" viewBox="0 0 34 34" aria-hidden="true"><circle cx="17" cy="17" r="15" fill="none" stroke="#3FD4FF" stroke-width="2"/><circle cx="17" cy="17" r="6" fill="#3FD4FF"/></svg>
+      <div class="word">JARVIS</div>
+      <div class="chip" id="routine"></div>
+    </div>
+    <div class="meta"><span class="dot"></span><span id="brain"></span><span class="clock" id="clock"></span></div>
+  </header>
+
+  <aside class="side" aria-label="System">
+    <div class="k">SYSTEM</div>
+    <div class="card"><div class="k">BRAIN</div><div class="big" id="brain2">—</div></div>
+    <div class="card"><div class="k">WAKE</div><div class="tags"><span>“Hey Jarvis”</span><span>Double clap</span></div></div>
+    <div class="card"><div class="k">TODAY</div><div class="big" id="date"></div><div class="sub" id="time2"></div></div>
+  </aside>
+
+  <section class="center" aria-live="polite">
+    <div class="orb">
+      <svg viewBox="0 0 300 300" role="img" aria-label="Jarvis status">
+        <circle class="ping" cx="150" cy="150" r="118" fill="none" stroke="var(--c)" stroke-width="2"/>
+        <circle class="levelring" id="levelring" cx="150" cy="150" r="96" fill="none" stroke="var(--c)" stroke-opacity=".5" stroke-width="2"/>
+        <circle cx="150" cy="150" r="140" fill="none" stroke="#1C2A36" stroke-width="1"/>
+        <g class="r1"><circle cx="150" cy="150" r="128" fill="none" stroke="var(--c)" stroke-opacity=".45" stroke-width="1.5" stroke-dasharray="2 9"/></g>
+        <g class="r2"><circle id="r2" cx="150" cy="150" r="108" fill="none" stroke="var(--c)" stroke-width="3" stroke-dasharray="30 40" stroke-linecap="round"/></g>
+        <circle cx="150" cy="150" r="86" fill="none" stroke="#1C2A36" stroke-width="6"/>
+        <g class="core">
+          <circle cx="150" cy="150" r="62" fill="#0E2633"/>
+          <circle cx="150" cy="150" r="44" fill="#123B4D"/>
+          <circle id="heart" cx="150" cy="150" r="24" fill="var(--c)" fill-opacity=".6"/>
+        </g>
+      </svg>
+    </div>
+    <div class="label" id="label">STANDING BY</div>
+    <p class="caption" id="caption"></p>
+  </section>
+
+  <aside class="side" aria-label="Activity">
+    <div class="k">NOW PLAYING</div>
+    <div class="card np">
+      <div class="art"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#CFEFFF" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg></div>
+      <div style="min-width:0"><div class="t" id="np-t">Nothing playing</div><div class="a" id="np-a"></div><div class="st" id="np-s"></div></div>
+    </div>
+    <div class="k" style="margin-top:6px">ACTIVITY</div>
+    <ol class="log" id="log"></ol>
+  </aside>
+
+  <div class="talk">
+    <div class="card"><div class="k">YOU</div><div class="v" id="you"></div></div>
+    <div class="card"><div class="k jarvis-k">JARVIS</div><div class="v" id="jarvis">Ready when you are.</div></div>
+  </div>
+</div>
+<script>
+  const $ = (id) => document.getElementById(id);
+  const LOOK = {
+    idle:      { label: 'STANDING BY', dash: '30 40',          glow: .5 },
+    listening: { label: 'LISTENING',   dash: '80 30',          glow: .8 },
+    thinking:  { label: 'THINKING',    dash: '20 14',          glow: .7 },
+    speaking:  { label: 'SPEAKING',    dash: '120 50 30 50',   glow: .95 },
+  };
+  function render(s) {
+    const look = LOOK[s.mode] || LOOK.idle;
+    document.body.className = s.mode in LOOK ? s.mode : 'idle';
+    $('label').textContent = look.label;
+    $('r2').setAttribute('stroke-dasharray', look.dash);
+    $('heart').setAttribute('fill-opacity', look.glow);
+    $('caption').textContent = s.mode === 'thinking' && !s.caption ? 'One moment…' : (s.caption || '');
+    $('you').textContent = s.you || '';
+    $('jarvis').textContent = s.jarvis || 'Ready when you are.';
+    $('brain').textContent = s.brain || '';
+    $('brain2').textContent = s.brain || '—';
+    $('routine').textContent = s.routine ? s.routine.toUpperCase() + ' MODE' : '';
+    const p = s.playing;
+    $('np-t').textContent = p ? p.title : 'Nothing playing';
+    $('np-a').textContent = p ? [p.artist, p.app].filter(Boolean).join(' · ') : '';
+    $('np-s').textContent = p && p.status !== 'playing' ? p.status.toUpperCase() : '';
+    const log = $('log'); log.replaceChildren();
+    for (const a of s.activity || []) {
+      const li = document.createElement('li');
+      const t = document.createElement('span'); t.className = 't'; t.textContent = a.t;
+      const x = document.createElement('span'); x.className = 'x'; x.textContent = a.text;
+      li.append(t, x); log.append(li);
+    }
+  }
+  function tick() {
+    const d = new Date();
+    $('clock').textContent = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    $('date').textContent = d.toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' });
+    $('time2').textContent = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  }
+  tick(); setInterval(tick, 1000);
+  function connect() {
+    const es = new EventSource('/events');
+    es.addEventListener('state', (e) => render(JSON.parse(e.data)));
+    es.addEventListener('level', (e) => {
+      const v = JSON.parse(e.data);
+      $('levelring').style.transform = `scale(${1 + v * 0.35})`;
+    });
+    es.onerror = () => { es.close(); document.body.className = 'idle'; $('label').textContent = 'OFFLINE';
+                         $('caption').textContent = 'Jarvis isn’t running.'; setTimeout(connect, 3000); };
+  }
+  connect();
+</script>
+</body>
+</html>

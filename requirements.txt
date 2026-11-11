@@ -1,0 +1,17 @@
+anthropic
+openai
+python-dotenv
+numpy
+sounddevice
+SpeechRecognition
+pyttsx3
+requests
+tinytuya
+mcp>=2
+uiautomation
+openwakeword
+winrt-runtime
+winrt-Windows.Media.Control
+winrt-Windows.Foundation
+winrt-Windows.Foundation.Collections
+pillow
