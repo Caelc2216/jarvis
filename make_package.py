@@ -22,6 +22,7 @@ FILES = [
     "winlayout.py", "windows_control.py", "mcp_server.py", "startup.py", "paths.py", "setup.py",
     "setup_lights.py", "icon.py", "icon.png", "requirements.txt", ".env.example", ".gitignore", "README.txt",
     "setup.bat", "Start Jarvis.bat", "Stop Jarvis.bat", "Update Jarvis.bat", "updater.py", "version.json",
+    "remote_discord.py", "Set up Discord.bat",
     "models/hey_jarvis_v0.1.onnx", "models/melspectrogram.onnx", "models/embedding_model.onnx",
 ]
 

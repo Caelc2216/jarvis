@@ -27,10 +27,21 @@ TEACHING IT
        -> it puts them back exactly there every time.
   - "Add Spotify to gaming" / "delete the gaming routine" / "what routines do I have?"
 
+TEXT JARVIS FROM YOUR PHONE (optional)
+  Double-click  Set up Discord.bat  and follow the steps (about 3 minutes).
+  It makes a private Discord bot that only YOUR Discord account can use.
+  Then message the bot from anywhere (your PC has to be on):
+    - "open Steam so it can update"   "what's playing?"   "pause the music"
+    - "set a timer for 20 minutes"     "close Discord"
+    - "screenshot"  -> sends you a picture of your screens
+  Jarvis also texts you when a timer finishes or there's an update.
+
 BUTTONS
   Start Jarvis.bat   start it (if you stopped it)
   Stop Jarvis.bat    stop it
   setup.bat          change your answers (brain, voice, screen...)
+  Update Jarvis.bat  get the newest version (or just say "update yourself")
+  Set up Discord.bat text Jarvis from your phone
 
 IF SOMETHING'S WRONG
   Look at jarvis.log in this folder - it says what Jarvis heard and did.

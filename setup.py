@@ -77,7 +77,7 @@ def read_env() -> dict:
 def write_env(values: dict) -> None:
     order = ["JARVIS_USER_NAME", "BRAIN", "OLLAMA_MODEL", "CLAUDE_CODE_MODEL", "ELEVENLABS_API_KEY",
              "ELEVENLABS_VOICE_ID", "WAKE_WORD", "HUD", "HUD_MONITOR", "HUD_AREA", "HUD_SIZE", "HUD_ON_TOP",
-             "HUD_AUTOHIDE", "WELCOME_ACTIONS"]
+             "HUD_AUTOHIDE", "WELCOME_ACTIONS", "REMOTE", "DISCORD_BOT_TOKEN", "DISCORD_OWNER_ID"]
     keys = order + [k for k in values if k not in order]
     lines = ["# Jarvis settings, written by setup.py. Run setup.bat again to change them.",
              "# Keep this file private: it can hold your keys."]
@@ -209,6 +209,51 @@ def step_display(env):
     env.setdefault("WELCOME_ACTIONS", "")
 
 
+def step_remote(env, standalone=False):
+    title("Text Jarvis from your phone (Discord)" if standalone else "5b. Text Jarvis from your phone")
+    say("Optional: message Jarvis from anywhere through a private Discord bot that only you can use.")
+    if not yes("Set this up now?", standalone):
+        return
+    import webbrowser
+
+    import remote_discord
+
+    say(f"""
+{BOLD}Make your bot (about 3 minutes):{RESET}
+  1. A Discord page is opening. Sign in if asked, then click {BOLD}New Application{RESET}.
+     Name it "Jarvis", tick the box, click {BOLD}Create{RESET}.
+  2. On the left click {BOLD}Bot{RESET}. Change the {BOLD}Username{RESET} to Jarvis and click Save.
+     Then {BOLD}Reset Token{RESET} > {BOLD}Yes, do it!{RESET} and {BOLD}Copy{RESET}.
+     (This token is like a password for your bot. Don't share it.)""")
+    if not AUTO:
+        webbrowser.open("https://discord.com/developers/applications")
+    token = "" if AUTO else getpass.getpass("\n  Paste the bot token here (it stays hidden) and press Enter: ").strip()
+    if not token:
+        say("No token, skipping. Run setup.bat again any time to add it.")
+        return
+    if not remote_discord.bot_id_from_token(token).isdigit():
+        say("That doesn't look like a bot token. Copy it again from the Bot page and run setup.bat again.")
+        return
+    say(f"""
+  3. Now add the bot to a server you own so you can message it.
+     A page is opening: pick your server, click {BOLD}Authorize{RESET}.
+     (No server? In Discord click the + on the left > Create My Own > For me and my friends.)""")
+    webbrowser.open(remote_discord.invite_url(token))
+    if not AUTO:
+        input("\n  Press Enter once the bot is in your server...")
+    say(f"""
+  4. In Discord, find the bot in your server's member list, click it, and choose {BOLD}Message{RESET}.""")
+    paired = remote_discord.pair(token)
+    if not paired:
+        say("Didn't get the code in time. Run setup.bat again to try once more.")
+        return
+    owner_id, owner_name = paired
+    env["DISCORD_BOT_TOKEN"] = token
+    env["DISCORD_OWNER_ID"] = str(owner_id)
+    env["REMOTE"] = "on"
+    say(f"\n  Paired with {owner_name}. Only that Discord account can control Jarvis.")
+
+
 def step_apps():
     title("5. Getting to know this PC")
     import apps
@@ -243,12 +288,23 @@ To change anything later, run {BOLD}setup.bat{RESET} again.""")
 
 
 def main():
-    say(f"{CYAN}{BOLD}\n   J A R V I S   setup{RESET}\n   A few quick questions and you're done.")
     env = read_env()
+    if "--discord" in sys.argv:  # just (re)do the Discord part: python setup.py --discord
+        step_remote(env, standalone=True)
+        write_env(env)
+        if env.get("DISCORD_OWNER_ID"):
+            say("\nRestarting Jarvis so it picks this up...")
+            run([sys.executable, str(HERE / "startup.py"), "stop"])
+            run([sys.executable, str(HERE / "startup.py"), "start"])
+            say("Done. Text your bot \"help\" to see what it can do.")
+        return
+    say(f"{CYAN}{BOLD}\n   J A R V I S   setup{RESET}\n   A few quick questions and you're done.")
     step_name(env)
     step_brain(env)
     step_voice(env)
     step_display(env)
+    if not AUTO:
+        step_remote(env)
     write_env(env)
     os.environ.update(env)
     step_apps()

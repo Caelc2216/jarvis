@@ -25,6 +25,7 @@ load_dotenv(Path(__file__).with_name(".env"))  # works no matter where it's star
 
 import hud  # noqa: E402
 import updater  # noqa: E402
+import remote_discord  # noqa: E402
 import routines  # noqa: E402
 import tools  # noqa: E402  (needs .env loaded first)
 from brains import Router  # noqa: E402
@@ -93,12 +94,17 @@ def _speak_elevenlabs(text: str) -> None:
 def watch_updates() -> None:
     """Check GitHub for a newer Jarvis shortly after starting, then once a day."""
     time.sleep(60)
+    told = ""
     while True:
         try:
             status = updater.check()
-            if updater.update_available():
+            new = updater.update_available()
+            if new:
                 print(f"  (update: {status})")
-                hud.activity(f"Update available · v{updater.update_available()}")
+                hud.activity(f"Update available · v{new}")
+                if new != told:
+                    told = new
+                    remote_discord.notify(f"Jarvis {new} is out. Text me \"update yourself\" to install it.")
         except Exception as e:
             print(f"  (update check failed: {e})")
         time.sleep(24 * 3600)
@@ -109,6 +115,7 @@ def watch_timers() -> None:
     while True:
         for label in tools.pop_due_timers():
             was_asleep = hud.mode() == "idle"
+            remote_discord.notify(f"⏰ Your {label} is done.")
             speak(f"Excuse me, your {label} is done.")  # pops the HUD up while it talks
             if was_asleep:  # then tuck it away again
                 hud.state("idle", "Say “Hey Jarvis” or clap twice.")
@@ -276,6 +283,21 @@ def main() -> None:
     print(f"Brain: {brain.default}   (say 'ask Claude ...' or 'ask ChatGPT ...' to switch for one question)")
     threading.Thread(target=watch_timers, daemon=True).start()
     threading.Thread(target=watch_updates, daemon=True).start()
+
+    # Texting Jarvis over Discord: its own conversation, so it never mixes with what's said out loud.
+    remote_brain, remote_lock = Router(), threading.Lock()
+
+    def remote_ask(text: str) -> str:
+        with remote_lock:
+            return remote_brain.ask(text)
+
+    def remote_status() -> str:
+        playing = hud._state.get("playing")
+        return (f"Jarvis {updater.local()['version']} is running on your PC. Brain: {brain.default}. "
+                f"Right now: {hud.mode()}."
+                + (f" Playing: {playing['title']} by {playing['artist']}." if playing else ""))
+
+    remote_discord.start(remote_ask, remote_status)
     told_about_update = ""
 
     def listen() -> str | None:
