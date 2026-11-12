@@ -85,6 +85,90 @@ def write_env(values: dict) -> None:
     ENV.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def _clean_secret(text: str) -> str:
+    """Drop what sneaks in when pasting: spaces, quotes, and invisible characters (e.g. a stray Ctrl+V)."""
+    text = "".join(ch for ch in text if ch.isprintable()).strip().strip("'\"").strip()
+    return text.split("=", 1)[1].strip() if "=" in text and text.split("=", 1)[0].isupper() else text
+
+
+def secret_input(label: str, current: str, check, env_key: str) -> str:
+    """Ask for a key/token, show what arrived, and test it. Returns a working value or ''."""
+    for attempt in range(3):
+        raw = getpass.getpass(f"\n  Paste the {label} (it stays hidden; right-click to paste) and press Enter"
+                              + (" [Enter = keep the current one]" if current else "") + ": ")
+        value = _clean_secret(raw) or current
+        if not value:
+            say("  Nothing arrived. Try right-clicking in this window to paste, then press Enter.")
+            continue
+        say(f"  Got {len(value)} characters, starting with '{value[:4]}…'. Checking it...")
+        ok, msg = check(value)
+        say(("  ✓ " if ok else "  ✗ ") + msg)
+        if ok:
+            return value
+    say(f"\n  Still not working. Another way: open the .env file in this folder with Notepad, add a line")
+    say(f"     {env_key}=<paste here>")
+    say("  save it, then come back here.")
+    if not AUTO and yes("  Done that? Check it now?", True):
+        value = _clean_secret(read_env().get(env_key, ""))
+        if value:
+            ok, msg = check(value)
+            say(("  ✓ " if ok else "  ✗ ") + msg)
+            if ok:
+                return value
+    return ""
+
+
+def check_elevenlabs(key: str) -> tuple[bool, str]:
+    import requests
+
+    if key.isdigit() or (len(key) == 64 and not key.startswith("sk")):
+        return False, ("That's the key's ID, not the key. The real key starts with 'sk_' and is only shown once, "
+                       "in the popup right after you click Create Key. Make a new key and copy it from that popup.")
+    try:
+        r = requests.post(f"https://api.elevenlabs.io/v1/text-to-speech/{DEFAULT_VOICE}",
+                          headers={"xi-api-key": key}, json={"text": "Hi", "model_id": "eleven_flash_v2_5"},
+                          timeout=20)
+    except Exception as e:
+        return False, f"Couldn't reach ElevenLabs ({e.__class__.__name__}). Check the internet connection."
+    if r.ok:
+        return True, "The key works."
+    try:
+        detail = r.json().get("detail", {})
+    except ValueError:
+        detail = {}
+    status = str(detail.get("status", "") if isinstance(detail, dict) else "")
+    friendly = {
+        "api_key_id_used_as_api_key": "That's the key's ID, not the key. Copy the one starting with 'sk_' from the "
+                                      "popup shown right after Create Key.",
+        "invalid_api_key": "ElevenLabs doesn't recognise that key. Copy it again, or make a new one.",
+        "missing_permissions": "The key is missing permissions. Edit it and set 'Text to Speech' to Access.",
+        "quota_exceeded": "This account has used up its free characters for the month.",
+        "detected_unusual_activity": "ElevenLabs has paused free use on this account (often caused by a VPN).",
+    }
+    message = detail.get("message") if isinstance(detail, dict) else str(detail)
+    return False, friendly.get(status, f"ElevenLabs said: {message or r.text[:200]}")
+
+
+def check_discord_token(token: str) -> tuple[bool, str]:
+    import requests
+
+    import remote_discord
+
+    if token.count(".") != 2 or not remote_discord.bot_id_from_token(token).isdigit():
+        if token.isdigit():
+            return False, "That's the Application ID. Go to Bot > Reset Token and copy the token instead."
+        return False, ("That doesn't look like a bot token (it should be ~70 characters with two dots). "
+                       "Go to Bot > Reset Token > Copy.")
+    try:
+        r = requests.get("https://discord.com/api/v10/users/@me", headers={"Authorization": f"Bot {token}"},
+                         timeout=20)
+    except Exception as e:
+        return False, f"Couldn't reach Discord ({e.__class__.__name__})."
+    if r.ok:
+        return True, f"The token works (bot name: {r.json().get('username')})."
+    return False, "Discord rejected that token. It may have been reset since you copied it: reset it once more and copy the newest one."
+
+
 def gpu_memory_gb() -> float:
     try:
         out = run(["nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader,nounits"],
@@ -175,14 +259,17 @@ def step_voice(env):
         env.pop("ELEVENLABS_VOICE_ID", None)
         return
     say("\nOn elevenlabs.io: sign in > Developers > API Keys > Create Key.")
-    say("Give it 'Text to Speech' and 'Voices: Read' access, then copy it.")
-    key = env.get("ELEVENLABS_API_KEY", "") if AUTO else (
-        getpass.getpass("Paste the key here (it stays hidden) and press Enter: ").strip()
-        or env.get("ELEVENLABS_API_KEY", ""))
+    say("Set 'Text to Speech' and 'Speech to Text' to Access, click Create, then copy the key")
+    say("from the popup (it starts with sk_ and is only shown that once).")
+    if AUTO:
+        return
+    key = secret_input("ElevenLabs key", env.get("ELEVENLABS_API_KEY", ""), check_elevenlabs, "ELEVENLABS_API_KEY")
     if key:
         env["ELEVENLABS_API_KEY"] = key
         env.setdefault("ELEVENLABS_VOICE_ID", DEFAULT_VOICE)
         say("Saved. Jarvis will use the 'Daniel' voice (calm, British).")
+    else:
+        say("Keeping the built-in Windows voice for now. Run setup.bat again to try another key.")
 
 
 def step_display(env):
@@ -270,13 +357,13 @@ def step_remote(env, standalone=False):
      (This token is like a password for your bot. Don't share it.)""")
     if not AUTO:
         webbrowser.open("https://discord.com/developers/applications")
-    token = "" if AUTO else getpass.getpass("\n  Paste the bot token here (it stays hidden) and press Enter: ").strip()
+    token = "" if AUTO else secret_input("bot token", env.get("DISCORD_BOT_TOKEN", ""), check_discord_token,
+                                         "DISCORD_BOT_TOKEN")
     if not token:
-        say("No token, skipping. Run setup.bat again any time to add it.")
+        say("No working token, skipping. Run 'Set up Discord.bat' any time to try again.")
         return
-    if not remote_discord.bot_id_from_token(token).isdigit():
-        say("That doesn't look like a bot token. Copy it again from the Bot page and run setup.bat again.")
-        return
+    env["DISCORD_BOT_TOKEN"] = token
+    write_env(env)  # keep it even if pairing below gets interrupted
     say(f"""
   3. Now add the bot to a server you own so you can message it.
      A page is opening: pick your server, click {BOLD}Authorize{RESET}.
@@ -350,14 +437,13 @@ def main():
             say("Done. Text your bot \"help\" to see what it can do.")
         return
     say(f"{CYAN}{BOLD}\n   J A R V I S   setup{RESET}\n   A few quick questions and you're done.")
-    step_name(env)
-    step_brain(env)
-    step_voice(env)
-    step_display(env)
-    step_mic(env)
+    # Save after every step, so closing the window part-way never loses earlier answers.
+    for step in (step_name, step_brain, step_voice, step_display, step_mic):
+        step(env)
+        write_env(env)
     if not AUTO:
         step_remote(env)
-    write_env(env)
+        write_env(env)
     os.environ.update(env)
     step_apps()
     if not AUTO:

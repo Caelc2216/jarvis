@@ -84,6 +84,18 @@ def speak(text: str) -> None:
         engine.runAndWait()
 
 
+def _raise_with_reason(r) -> None:
+    """Like raise_for_status, but include ElevenLabs' own explanation so jarvis.log says what's wrong."""
+    if r.ok:
+        return
+    try:
+        detail = r.json().get("detail", r.text)
+        detail = detail.get("message", detail) if isinstance(detail, dict) else detail
+    except ValueError:
+        detail = r.text
+    raise RuntimeError(f"{r.status_code}: {str(detail)[:300]}")
+
+
 def _speak_elevenlabs(text: str) -> None:
     import requests
     import sounddevice as sd
@@ -100,7 +112,7 @@ def _speak_elevenlabs(text: str) -> None:
         },
         timeout=30,
     )
-    r.raise_for_status()
+    _raise_with_reason(r)
     audio = np.frombuffer(r.content, dtype=np.int16)
     sd.play(audio, 22050)
     sd.wait()
@@ -282,7 +294,7 @@ def transcribe(wav: bytes) -> str:
                 files={"file": ("speech.wav", wav, "audio/wav")},
                 timeout=30,
             )
-            r.raise_for_status()
+            _raise_with_reason(r)
             return r.json().get("text", "").strip()
         except Exception as e:
             print(f"  (ElevenLabs speech-to-text failed: {e})")
