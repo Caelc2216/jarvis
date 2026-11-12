@@ -43,6 +43,12 @@ BUTTONS
   Update Jarvis.bat  get the newest version (or just say "update yourself")
   Set up Discord.bat text Jarvis from your phone
 
+JARVIS DOESN'T HEAR YOU?
+  Double-click  Test microphone.bat . It checks the Windows privacy switch
+  (Settings > Privacy & security > Microphone > "Let desktop apps access your
+  microphone" must be ON - Windows never asks for this), listens to you, and lets
+  you pick the right microphone if it's using the wrong one.
+
 IF SOMETHING'S WRONG
   Look at jarvis.log in this folder - it says what Jarvis heard and did.
   Your settings are in .env. Keep that file private; it can hold your keys.

@@ -13,6 +13,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 HERE = Path(__file__).parent.resolve()
@@ -52,9 +53,11 @@ def off() -> None:
 
 
 def _running() -> list[str]:
+    # Only this folder's Jarvis (there could be another copy somewhere else on the PC).
     ps = ("Get-CimInstance Win32_Process | Where-Object { $_.Name -like 'pythonw*' -and "
-          "$_.CommandLine -like '*jarvis.py*--background*' } | ForEach-Object { $_.ProcessId }")
-    out = subprocess.run(["powershell", "-NoProfile", "-Command", ps], capture_output=True, text=True)
+          "$_.CommandLine -like ('*' + $env:JARVIS_SCRIPT + '*--background*') } | ForEach-Object { $_.ProcessId }")
+    out = subprocess.run(["powershell", "-NoProfile", "-Command", ps], capture_output=True, text=True,
+                         env={**os.environ, "JARVIS_SCRIPT": str(HERE / "jarvis.py")})
     return out.stdout.split()
 
 
@@ -69,8 +72,24 @@ def start() -> None:
     if _running():
         print("Jarvis is already running in the background.")
         return
-    subprocess.Popen([_pythonw(), str(HERE / "jarvis.py"), "--background"], cwd=HERE)
-    print("Started Jarvis in the background. Clap twice to wake it.")
+    log = HERE / "jarvis.log"
+    size_before = log.stat().st_size if log.exists() else 0
+    proc = subprocess.Popen([_pythonw(), str(HERE / "jarvis.py"), "--background"], cwd=HERE)
+    for _ in range(20):  # give it ~10 s to get going, and catch it if it dies right away
+        time.sleep(0.5)
+        if proc.poll() is not None:
+            break
+    if proc.poll() is None:
+        print('Started Jarvis in the background. Say "Hey Jarvis" or clap twice to wake it.')
+        return
+    print("Jarvis stopped right after starting. Here's what it said:\n")
+    if log.exists():
+        with open(log, encoding="utf-8", errors="replace") as f:
+            f.seek(size_before)
+            print("".join(f.read().splitlines(keepends=True)[-25:]) or "(nothing logged)")
+    else:
+        print("(no jarvis.log was written)")
+    print("\nDouble-click 'Troubleshoot Jarvis.bat' to see more, and send a screenshot of it.")
 
 
 if __name__ == "__main__":

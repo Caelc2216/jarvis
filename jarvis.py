@@ -18,6 +18,20 @@ import time
 import wave
 from pathlib import Path
 
+# In the background there's no window, so send all output (including a crash while starting up,
+# like a missing package) to jarvis.log before anything else can fail.
+if "--background" in sys.argv:
+    _log = open(Path(__file__).with_name("jarvis.log"), "a", encoding="utf-8", buffering=1)
+    sys.stdout = sys.stderr = _log
+    print(f"\n--- Jarvis started {time.strftime('%Y-%m-%d %H:%M')} (Python {sys.version.split()[0]}) ---")
+
+    def _crash(kind, value, tb):
+        import traceback
+
+        print("JARVIS CRASHED:\n" + "".join(traceback.format_exception(kind, value, tb)))
+
+    sys.excepthook = _crash
+
 import numpy as np
 from dotenv import load_dotenv
 
@@ -26,6 +40,7 @@ load_dotenv(Path(__file__).with_name(".env"))  # works no matter where it's star
 import hud  # noqa: E402
 import updater  # noqa: E402
 import remote_discord  # noqa: E402
+import mic_check  # noqa: E402
 import routines  # noqa: E402
 import tools  # noqa: E402  (needs .env loaded first)
 from brains import Router  # noqa: E402
@@ -89,6 +104,31 @@ def _speak_elevenlabs(text: str) -> None:
     audio = np.frombuffer(r.content, dtype=np.int16)
     sd.play(audio, 22050)
     sd.wait()
+
+
+def ensure_microphone() -> None:
+    """Make sure Jarvis can actually hear. Windows never prompts for desktop apps, so a blocked mic
+    looks like silence. If it's blocked: say so, open the right Settings page, and wait until it's fixed."""
+    import sounddevice as sd
+
+    chosen = mic_check.device_from_env()
+    if chosen is not None:
+        sd.default.device = (chosen, sd.default.device[1])
+        print(f"  (using microphone: {sd.query_devices(chosen)['name']})")
+    blocked = mic_check.privacy_block()
+    if not blocked:
+        ok, msg = mic_check.diagnose(chosen)
+        print(f"  ({msg})")  # silence alone could just be a quiet room / noise gate, so only log it
+        return
+    _, msg = mic_check.diagnose(chosen)
+    print(f"  (microphone blocked: {blocked})")
+    remote_discord.notify("Heads up: " + msg)
+    speak(msg + " I've opened that page for you.")
+    os.startfile(mic_check.SETTINGS_URL)
+    while mic_check.privacy_block():
+        hud.state("speaking", "Turn on microphone access in Settings › Privacy & security › Microphone.")
+        time.sleep(10)
+    speak("Thanks, I can hear you now. Say Hey Jarvis whenever you need me.")
 
 
 def watch_updates() -> None:
@@ -271,10 +311,6 @@ def main() -> None:
                         help="run hidden (used when starting with Windows); logs go to jarvis.log")
     args = parser.parse_args()
 
-    if args.background:  # no console: send output to a log file instead
-        log = open(Path(__file__).with_name("jarvis.log"), "a", encoding="utf-8", buffering=1)
-        sys.stdout = sys.stderr = log
-        print(f"\n--- Jarvis started {time.strftime('%Y-%m-%d %H:%M')} ---")
 
     brain = Router()
     hud.start({"ollama": "Ollama · local", "claude": "Claude · Pro plan", "codex": "ChatGPT · Codex",
@@ -316,6 +352,12 @@ def main() -> None:
         if heard:
             hud.heard(heard)
         return heard
+
+    if not args.text:
+        try:
+            ensure_microphone()
+        except Exception as e:
+            print(f"  (microphone check failed: {e})")
 
     first_wake = True
     while True:

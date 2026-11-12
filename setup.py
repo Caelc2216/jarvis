@@ -77,7 +77,7 @@ def read_env() -> dict:
 def write_env(values: dict) -> None:
     order = ["JARVIS_USER_NAME", "BRAIN", "OLLAMA_MODEL", "CLAUDE_CODE_MODEL", "ELEVENLABS_API_KEY",
              "ELEVENLABS_VOICE_ID", "WAKE_WORD", "HUD", "HUD_MONITOR", "HUD_AREA", "HUD_SIZE", "HUD_ON_TOP",
-             "HUD_AUTOHIDE", "WELCOME_ACTIONS", "REMOTE", "DISCORD_BOT_TOKEN", "DISCORD_OWNER_ID"]
+             "HUD_AUTOHIDE", "WELCOME_ACTIONS", "MIC_DEVICE", "REMOTE", "DISCORD_BOT_TOKEN", "DISCORD_OWNER_ID"]
     keys = order + [k for k in values if k not in order]
     lines = ["# Jarvis settings, written by setup.py. Run setup.bat again to change them.",
              "# Keep this file private: it can hold your keys."]
@@ -209,6 +209,49 @@ def step_display(env):
     env.setdefault("WELCOME_ACTIONS", "")
 
 
+def step_mic(env):
+    title("Microphone check")
+    sys.path.insert(0, str(HERE))
+    import mic_check
+
+    for _ in range(4):  # Windows never asks Jarvis for mic permission, so check the switches ourselves
+        blocked = mic_check.privacy_block()
+        if not blocked:
+            break
+        say(f"Windows is blocking the microphone: {blocked}.")
+        say("A Settings page is opening. Turn ON all three switches there, especially")
+        say(f"{BOLD}'Let desktop apps access your microphone'{RESET} (near the bottom).")
+        os.startfile(mic_check.SETTINGS_URL)
+        if AUTO:
+            return
+        input("Press Enter when you've turned them on...")
+    else:
+        say("The microphone is still blocked. Jarvis will remind you until it's turned on.")
+        return
+
+    device = mic_check.device_from_env()
+    for _ in range(3):
+        if AUTO:
+            return
+        input(f"\nWhen you press Enter, {BOLD}say something out loud for 3 seconds{RESET}. Ready? ")
+        peak, all_zero, error = mic_check.sample(3.0, device)
+        bars = int(min(1.0, peak * 4) * 30)
+        say(f"Level: [{'#' * bars}{'.' * (30 - bars)}]")
+        if not error and peak >= 0.02:
+            say("Heard you loud and clear.")
+            return
+        say("I couldn't hear much." if not error and not all_zero else
+            "I got complete silence: the mic may be muted, or a different one is selected.")
+        mics = mic_check.list_inputs()
+        if not mics:
+            say("No microphone was found. Plug one in and run setup.bat again.")
+            return
+        pick = choose("Which microphone do you talk into?", [(name, "") for _, name in mics], 1)
+        device, name = mics[pick - 1]
+        env["MIC_DEVICE"] = name[:31]
+    say("Still not hearing much. Check the mic isn't muted (some headsets have a mute switch), then run setup again.")
+
+
 def step_remote(env, standalone=False):
     title("Text Jarvis from your phone (Discord)" if standalone else "5b. Text Jarvis from your phone")
     say("Optional: message Jarvis from anywhere through a private Discord bot that only you can use.")
@@ -289,6 +332,14 @@ To change anything later, run {BOLD}setup.bat{RESET} again.""")
 
 def main():
     env = read_env()
+    if "--mic" in sys.argv:  # just the microphone check: python setup.py --mic
+        os.environ.update(env)
+        run([sys.executable, str(HERE / "startup.py"), "stop"])  # free the mic while testing
+        step_mic(env)
+        write_env(env)
+        run([sys.executable, str(HERE / "startup.py"), "start"])
+        say("\nJarvis restarted. Say \"Hey Jarvis\" to try it.")
+        return
     if "--discord" in sys.argv:  # just (re)do the Discord part: python setup.py --discord
         step_remote(env, standalone=True)
         write_env(env)
@@ -303,6 +354,7 @@ def main():
     step_brain(env)
     step_voice(env)
     step_display(env)
+    step_mic(env)
     if not AUTO:
         step_remote(env)
     write_env(env)
