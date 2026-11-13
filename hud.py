@@ -30,7 +30,7 @@ import paths  # noqa: E402
 BROWSER = paths.browser()                      # Chrome, or Edge if Chrome isn't installed
 BROWSER_EXE = os.path.basename(BROWSER).lower()
 
-_state = {"mode": "idle", "caption": "Say “Hey Jarvis” or clap twice.", "you": "", "jarvis": "",
+_state = {"mode": "idle", "caption": "Say “Hey Jarvis”.", "you": "", "jarvis": "",
           "brain": "", "routine": "", "activity": [], "playing": None, "level": 0.0}
 _lock = threading.Lock()
 _clients: list[queue.Queue] = []

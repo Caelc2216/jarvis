@@ -1,8 +1,8 @@
-"""Jarvis: double clap -> spoken welcome -> talk to Claude or ChatGPT.
+"""Jarvis: "Hey Jarvis" -> spoken welcome -> talk to Claude, ChatGPT or a local model.
 
-Run:   python jarvis.py           (clap to wake, then talk)
+Run:   python jarvis.py           (say "Hey Jarvis", then talk)
        python jarvis.py --text    (skip mic, type to Jarvis)
-       python jarvis.py --no-clap (skip the clap, start talking right away)
+       python jarvis.py --no-clap (skip waiting for the wake word, start talking right away)
 Stop:  Ctrl+C, or say/type "goodbye".
 
 What Jarvis can do lives in tools.py. The AI can only use those tools:
@@ -170,7 +170,7 @@ def watch_timers() -> None:
             remote_discord.notify(f"⏰ Your {label} is done.")
             speak(f"Excuse me, your {label} is done.")  # pops the HUD up while it talks
             if was_asleep:  # then tuck it away again
-                hud.state("idle", "Say “Hey Jarvis” or clap twice.")
+                hud.state("idle", wake_hint())
         time.sleep(1)
 
 
@@ -178,6 +178,7 @@ def watch_timers() -> None:
 WAKE_WORD = os.getenv("WAKE_WORD", "on").lower() not in ("off", "0", "false", "no")
 WAKE_THRESHOLD = float(os.getenv("WAKE_THRESHOLD", "0.5"))
 WAKE_FRAMES = int(os.getenv("WAKE_FRAMES", "4"))  # 80 ms frames in a row above the threshold
+WAKE_CLAP = os.getenv("WAKE_CLAP", "off").lower() in ("on", "1", "true", "yes")  # double clap to wake
 _wake_model = None
 
 
@@ -197,20 +198,35 @@ def _load_wake_model():
     return _wake_model
 
 
+def wake_hint() -> str:
+    """What to say/do to wake Jarvis, for the HUD and messages."""
+    model, clap = _load_wake_model(), _clap_enabled()
+    if model and clap:
+        return "Say “Hey Jarvis” or clap twice."
+    return "Say “Hey Jarvis”." if model else "Clap twice to wake me."
+
+
+def _clap_enabled() -> bool:
+    # Off unless WAKE_CLAP=on, but always on if the wake word can't load (so Jarvis can still be woken).
+    return WAKE_CLAP or _load_wake_model() is None
+
+
 def wait_for_wake() -> str:
-    """Block until a double clap or "Hey Jarvis". Returns "clap" or "hey jarvis"."""
+    """Block until "Hey Jarvis" (or a double clap, if enabled). Returns "hey jarvis" or "clap"."""
     import sounddevice as sd
 
     model = _load_wake_model()
+    clap = _clap_enabled()
     frame = 1280                                   # 80 ms, what the wake word model expects
     sub = int(SAMPLE_RATE * BLOCK_MS / 1000)       # 20 ms pieces for clap detection
     ambient, last_clap, clock, streak = 0.01, -10.0, 0.0, 0
     spike = None  # (time, peak, blocks since) of a loud moment that might be a clap
     if model:
         model.reset()
-    hud.state("idle", "Say “Hey Jarvis” or clap twice." if model else "Clap twice to wake me.")
+    hud.state("idle", wake_hint())
     hud.set_info(routine="")
-    print("Listening for a double clap" + (' or "Hey Jarvis"' if model else "") + "... (Ctrl+C to quit)")
+    print("Listening for " + " or ".join(filter(None, ['"Hey Jarvis"' if model else "", "a double clap" if clap else ""]))
+          + "... (Ctrl+C to quit)")
     with sd.InputStream(samplerate=SAMPLE_RATE, channels=1, blocksize=frame, dtype="int16") as stream:
         while True:
             data, _ = stream.read(frame)
@@ -221,6 +237,8 @@ def wait_for_wake() -> str:
                 if streak >= WAKE_FRAMES:
                     print("  (heard: Hey Jarvis)")
                     return "hey jarvis"
+            if not clap:
+                continue
             for i in range(0, frame, sub):             # clap check, using audio time not wall time
                 clock += sub / SAMPLE_RATE
                 rms = float(np.sqrt(np.mean((pcm[i:i + sub] / 32768.0) ** 2)))

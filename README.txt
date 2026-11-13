@@ -9,7 +9,7 @@ SETTING UP (once)
   That's it. Jarvis starts and will also start by itself when you turn on the PC.
 
 USING IT
-  Say "Hey Jarvis" (or clap twice). A glowing display pops up. Then just talk:
+  Say "Hey Jarvis". A glowing display pops up. Then just talk:
     - "Open Discord" / "open Minecraft" / "launch Fortnite"
     - "What's the weather in Chicago?"   "What time is it?"
     - "Set a 15 minute timer for pizza"

@@ -405,7 +405,7 @@ def step_startup():
 def finish():
     title("All set!")
     say(f"""How to use Jarvis:
-  • Say {BOLD}"Hey Jarvis"{RESET} (or clap twice), wait for it to answer, then talk normally.
+  • Say {BOLD}"Hey Jarvis"{RESET}, wait for it to answer, then talk normally.
   • Try: "open Discord", "what's the weather in Denver", "set a 10 minute timer",
          "play some music", "close Discord", "remember that I like pizza".
   • Teach it: "make a routine called gaming that opens Discord and Steam" — then just say "gaming".

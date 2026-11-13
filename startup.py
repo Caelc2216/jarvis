@@ -1,4 +1,4 @@
-"""Start Jarvis automatically when you sign in to Windows (hidden, waiting for a double clap).
+"""Start Jarvis automatically when you sign in to Windows (hidden, waiting for "Hey Jarvis").
 
     python startup.py on      add Jarvis to your Startup folder
     python startup.py off     remove it
@@ -80,7 +80,7 @@ def start() -> None:
         if proc.poll() is not None:
             break
     if proc.poll() is None:
-        print('Started Jarvis in the background. Say "Hey Jarvis" or clap twice to wake it.')
+        print('Started Jarvis in the background. Say "Hey Jarvis" to wake it.')
         return
     print("Jarvis stopped right after starting. Here's what it said:\n")
     if log.exists():
