@@ -105,23 +105,42 @@ def _speak_elevenlabs(text: str) -> None:
 
     voice = os.environ["ELEVENLABS_VOICE_ID"]
     t0 = time.time()
-    r = requests.post(
-        f"https://api.elevenlabs.io/v1/text-to-speech/{voice}",
-        params={"output_format": "pcm_22050"},
-        headers={"xi-api-key": os.environ["ELEVENLABS_API_KEY"]},
-        json={
-            "text": text,
-            "model_id": os.getenv("ELEVENLABS_MODEL", "eleven_flash_v2_5"),
-            "voice_settings": {"stability": 0.45, "similarity_boost": 0.8, "style": 0.2},
-        },
-        timeout=30,
-    )
-    _raise_with_reason(r)
+    # A hiccup (Wi-Fi blip, ElevenLabs busy for a moment) shouldn't drop to the Windows voice: try again.
+    for attempt in range(3):
+        try:
+            r = requests.post(
+                f"https://api.elevenlabs.io/v1/text-to-speech/{voice}",
+                params={"output_format": "pcm_22050"},
+                headers={"xi-api-key": os.environ["ELEVENLABS_API_KEY"]},
+                json={
+                    "text": text,
+                    "model_id": os.getenv("ELEVENLABS_MODEL", "eleven_flash_v2_5"),
+                    "voice_settings": {"stability": 0.45, "similarity_boost": 0.8, "style": 0.2},
+                },
+                timeout=(5, 20),  # connect, then read
+            )
+            if r.status_code == 429 or r.status_code >= 500:  # busy / their side: worth retrying
+                _raise_with_reason(r)
+            break
+        except (requests.ConnectionError, requests.Timeout, RuntimeError) as e:
+            if attempt == 2:
+                raise
+            print(f"  (ElevenLabs hiccup: {e}; trying again)")
+            time.sleep(0.7 * (attempt + 1))
+    _raise_with_reason(r)  # anything else (bad key, out of credits) won't fix itself by retrying
     TIMING["tts_s"] = time.time() - t0  # how long until the voice can start
     audio = np.frombuffer(r.content, dtype=np.int16)
     hud.speaking(len(audio) / 22050)
-    sd.play(audio, 22050)
-    sd.wait()
+    try:
+        sd.play(audio, 22050)
+        sd.wait()
+    except sd.PortAudioError as e:
+        # The speakers changed under us (sleep/wake, Bluetooth, headphones): reconnect and play it again.
+        print(f"  (speaker problem: {e}; reconnecting audio)")
+        sd._terminate()
+        sd._initialize()
+        sd.play(audio, 22050)
+        sd.wait()
 
 
 TIMING: dict = {}  # timings of the current reply, for metrics
