@@ -210,7 +210,17 @@ def step_brain(env):
         ("ChatGPT (needs a ChatGPT plan, even Go works)",
          "Slower to answer." + (" Codex is installed." if has_codex else " Installs Codex.")),
     ]
-    default = 1 if gb >= 6 else (2 if has_claude else 1)
+    try:
+        import psutil
+
+        laptop = psutil.sensors_battery() is not None
+    except Exception:
+        laptop = False
+    if laptop:
+        say(f"{DIM}This looks like a laptop: a cloud brain (2 or 3) keeps it fast and cool; the free one runs "
+            f"on the laptop itself and can slow it down.{RESET}")
+    # Local only on a desktop with a strong graphics card; otherwise a cloud brain the user already has.
+    default = 1 if (gb >= 8 and not laptop) else (2 if has_claude else 3 if has_codex else 1)
     pick = choose("Which brain should Jarvis use?", options, default)
 
     if pick == 1:

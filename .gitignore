@@ -25,3 +25,4 @@ jarvis.ico
 # wake word: only the .onnx models are used
 models/*.tflite
 models/silero_vad.onnx
+metrics.jsonl

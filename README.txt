@@ -49,6 +49,12 @@ JARVIS DOESN'T HEAR YOU?
   microphone" must be ON - Windows never asks for this), listens to you, and lets
   you pick the right microphone if it's using the wrong one.
 
+SPEED AND LAPTOPS
+  Double-click  Jarvis Stats.bat  (or ask "how are you performing?", or text the bot "stats")
+  to see how long replies take and how much CPU/memory Jarvis uses.
+  On a laptop or slower PC: run setup.bat and pick Claude or ChatGPT as the brain (the free
+  local brain runs ON your PC and is heavy), and add  PERFORMANCE=lite  to .env.
+
 IF SOMETHING'S WRONG
   Look at jarvis.log in this folder - it says what Jarvis heard and did.
   Your settings are in .env. Keep that file private; it can hold your keys.

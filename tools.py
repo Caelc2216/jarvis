@@ -268,6 +268,12 @@ def jarvis_version() -> str:
     return f"Jarvis version {updater.local()['version']}."
 
 
+def jarvis_stats(hours: float = 24) -> str:
+    import metrics
+
+    return metrics.summary(hours)
+
+
 # --------------------------------------------------------------- registry --
 def _s(props: dict, required: list[str]) -> dict:
     return {"type": "object", "properties": props, "required": required, "additionalProperties": False}
@@ -295,6 +301,9 @@ TOOLS = [
     (update_jarvis, "Download and install the newest Jarvis, then restart. Only when the user asks you to "
      "update. Their settings and everything you've learned are kept.", _s({}, [])),
     (jarvis_version, "Say which version of Jarvis this is.", _s({}, [])),
+    (jarvis_stats, "How fast Jarvis has been answering and how much CPU/memory it (and the local brain) uses. "
+     "Summarise the key numbers briefly when speaking.",
+     _s({"hours": {"type": "number", "description": "How far back, default 24"}}, [])),
     # Routines the user builds by talking
     (create_routine, "Create (or replace) a routine: a name the user says to open several apps at once, "
      "e.g. name 'homework', apps ['Google Docs', 'Spotify']. Confirm the app list with the user first.",

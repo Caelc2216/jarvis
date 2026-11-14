@@ -170,7 +170,7 @@ def _watch_music():
                 set_info(playing=info)
         except Exception:
             pass
-        time.sleep(3)
+        time.sleep(float(os.getenv("MUSIC_WATCH_S", "3")))
 
 
 # ---------------------------------------------------------------- window --

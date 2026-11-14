@@ -41,6 +41,7 @@ import hud  # noqa: E402
 import updater  # noqa: E402
 import remote_discord  # noqa: E402
 import mic_check  # noqa: E402
+import metrics  # noqa: E402
 import routines  # noqa: E402
 import tools  # noqa: E402  (needs .env loaded first)
 from brains import Router  # noqa: E402
@@ -102,6 +103,7 @@ def _speak_elevenlabs(text: str) -> None:
     import sounddevice as sd
 
     voice = os.environ["ELEVENLABS_VOICE_ID"]
+    t0 = time.time()
     r = requests.post(
         f"https://api.elevenlabs.io/v1/text-to-speech/{voice}",
         params={"output_format": "pcm_22050"},
@@ -114,9 +116,13 @@ def _speak_elevenlabs(text: str) -> None:
         timeout=30,
     )
     _raise_with_reason(r)
+    TIMING["tts_s"] = time.time() - t0  # how long until the voice can start
     audio = np.frombuffer(r.content, dtype=np.int16)
     sd.play(audio, 22050)
     sd.wait()
+
+
+TIMING: dict = {}  # timings of the current reply, for metrics
 
 
 def ensure_microphone() -> None:
@@ -180,6 +186,11 @@ WAKE_WORD = os.getenv("WAKE_WORD", "on").lower() not in ("off", "0", "false", "n
 WAKE_THRESHOLD = float(os.getenv("WAKE_THRESHOLD", "0.5"))
 WAKE_FRAMES = int(os.getenv("WAKE_FRAMES", "4"))  # 80 ms frames in a row above the threshold
 WAKE_CLAP = os.getenv("WAKE_CLAP", "off").lower() in ("on", "1", "true", "yes")  # double clap to wake
+# PERFORMANCE=lite: for laptops / slower PCs. Checks things less often and skips the on-screen display.
+LITE = os.getenv("PERFORMANCE", "").lower() == "lite"
+if LITE:
+    os.environ["HUD"] = os.getenv("LITE_HUD", "off")  # the display costs a browser window; LITE_HUD=on keeps it
+    os.environ.setdefault("MUSIC_WATCH_S", "15")
 _wake_model = None
 
 
@@ -395,13 +406,18 @@ def main() -> None:
     print(f"Brain: {brain.default}   (say 'ask Claude ...' or 'ask ChatGPT ...' to switch for one question)")
     threading.Thread(target=watch_timers, daemon=True).start()
     threading.Thread(target=watch_updates, daemon=True).start()
+    threading.Thread(target=metrics.watch_resources, args=(300 if LITE else 60,), daemon=True).start()
 
     # Texting Jarvis over Discord: its own conversation, so it never mixes with what's said out loud.
     remote_brain, remote_lock = Router(), threading.Lock()
 
     def remote_ask(text: str) -> str:
         with remote_lock:
-            return remote_brain.ask(text)
+            t0 = time.time()
+            reply = remote_brain.ask(text)
+            metrics.record("reply", via="discord", brain=getattr(remote_brain, "last", "?"),
+                           think_s=time.time() - t0, chars=len(reply or ""))
+            return reply
 
     def remote_status() -> str:
         playing = hud._state.get("playing")
@@ -422,7 +438,10 @@ def main() -> None:
         wav = record_until_silence()
         if wav is None:
             return None
+        t0 = time.time()
         heard = transcribe(wav)
+        TIMING.clear()
+        TIMING["stt_s"] = time.time() - t0
         print(f"You: {heard}")
         if heard:
             hud.heard(heard)
@@ -480,6 +499,16 @@ def recover_audio(error) -> None:
                 print(f"  (still waiting for a microphone after {waited} s: {e})")
 
 
+def record_reply(brain, heard: str, reply: str) -> None:
+    """Log how long this answer took, and show it in the HUD's activity list."""
+    stt, think, tts = TIMING.get("stt_s", 0.0), TIMING.get("think_s", 0.0), TIMING.get("tts_s", 0.0)
+    total = stt + think + tts
+    metrics.record("reply", via="voice", brain=getattr(brain, "last", "?"), stt_s=stt, think_s=think,
+                   tts_s=tts, response_s=total, words=len(heard.split()), chars=len(reply or ""))
+    print(f"  (reply took {total:.1f} s: hearing {stt:.1f} · thinking {think:.1f} · voice {tts:.1f})")
+    hud.activity(f"Reply in {total:.1f} s (thinking {think:.1f})")
+
+
 def _conversation_factory(args, brain, listen):
     """Builds the wake -> talk cycle used by main(); split out so errors can be recovered from."""
     state = {"told_about_update": ""}
@@ -517,7 +546,12 @@ def _conversation_factory(args, brain, listen):
                 elif name := routines.match(heard):
                     routines.run(name, speak, listen)
                 else:
-                    speak(brain.ask(heard))
+                    t0 = time.time()
+                    reply = brain.ask(heard)
+                    TIMING["think_s"] = time.time() - t0
+                    TIMING.pop("tts_s", None)
+                    speak(reply)
+                    record_reply(brain, heard, reply)
             except Exception as e:
                 print(f"  (error: {e})")
                 speak("Sorry, something went wrong there. The details are in the log.")

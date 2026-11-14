@@ -19,7 +19,7 @@ import time
 
 HELP = ("Text me like you'd talk to me: \"open Steam\", \"what's playing?\", \"pause\", \"set a timer for 20 "
         "minutes\", \"what windows are open?\", \"close Discord\".\n"
-        "Extras: **screenshot** (see your screens), **status**, **help**.")
+        "Extras: **screenshot** (see your screens), **status**, **stats** (speed and CPU/memory), **help**.")
 
 _client = None
 _loop: asyncio.AbstractEventLoop | None = None
@@ -109,6 +109,10 @@ def start(ask, describe_status) -> None:
                 await message.channel.send(file=await asyncio.get_running_loop().run_in_executor(None, _screenshot))
             elif low in ("status", "ping"):
                 await message.channel.send(describe_status())
+            elif low in ("stats", "performance", "speed"):
+                import metrics
+
+                await message.channel.send("```\n" + metrics.summary(24)[:1900] + "\n```")
             elif text:
                 async with message.channel.typing():
                     reply = await asyncio.get_running_loop().run_in_executor(

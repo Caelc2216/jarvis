@@ -300,5 +300,7 @@ class Router:
     def ask(self, text: str) -> str:
         for pattern, name in ROUTES:
             if pattern.match(text):
+                self.last = name
                 return self.brain(name).ask(pattern.sub("", text, count=1))
+        self.last = self.default if self.default in BRAINS else "ollama"
         return self.brain(self.default).ask(text)

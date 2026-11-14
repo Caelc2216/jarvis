@@ -28,7 +28,7 @@ LOG = HERE / "update.log"
 # Never overwritten or deleted by an update: everything personal or learned on this PC.
 KEEP = {".env", "memory.json", "routines.json", "aliases.json", "apps.json", "devices.json", "timers.json",
         "routine_windows.json", "close_history.json", "update_state.json", "jarvis.log", "update.log",
-        "icon.png", "jarvis.ico", "tinytuya.json", "snapshot.json", "tuya-raw.json"}
+        "icon.png", "jarvis.ico", "metrics.jsonl", "tinytuya.json", "snapshot.json", "tuya-raw.json"}
 KEEP_DIRS = {"backups", ".hud-profile", "plugins", ".git", "__pycache__", "dist"}
 
 
