@@ -82,6 +82,7 @@ def speak(text: str) -> None:
         import pyttsx3
 
         engine = pyttsx3.init()
+        hud.speaking(len(text.split()) / 2.6)  # about 2.6 words a second
         engine.say(text)
         engine.runAndWait()
 
@@ -118,6 +119,7 @@ def _speak_elevenlabs(text: str) -> None:
     _raise_with_reason(r)
     TIMING["tts_s"] = time.time() - t0  # how long until the voice can start
     audio = np.frombuffer(r.content, dtype=np.int16)
+    hud.speaking(len(audio) / 22050)
     sd.play(audio, 22050)
     sd.wait()
 

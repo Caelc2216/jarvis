@@ -67,6 +67,12 @@ def said(text: str) -> None:
         show()
 
 
+def speaking(duration_s: float) -> None:
+    """The voice just started and lasts this long: the HUD scrolls a long reply along with it."""
+    if _server is not None:
+        _push("speak", {"duration": round(max(0.5, duration_s), 2)})
+
+
 def heard(text: str) -> None:
     if _server is not None:
         _update(mode="thinking", caption="", you=text)
@@ -147,9 +153,14 @@ class _Handler(BaseHTTPRequestHandler):
             self.send_error(404)
 
     def do_POST(self):
+        global _reading_until
         if self.path == "/activity" and self.client_address[0] == "127.0.0.1":
             n = min(int(self.headers.get("Content-Length", 0)), 500)
             activity(self.rfile.read(n).decode("utf-8", "replace"))
+            self.send_response(204)
+            self.end_headers()
+        elif self.path == "/reading" and self.client_address[0] == "127.0.0.1":
+            _reading_until = time.time() + READING_HOLD_S  # the user is scrolling the reply: stay up
             self.send_response(204)
             self.end_headers()
         else:
@@ -177,6 +188,8 @@ def _watch_music():
 # The HUD shows only while Jarvis is awake; while it waits for "Hey Jarvis" it's hidden.
 AUTOHIDE = os.getenv("HUD_AUTOHIDE", "on").lower() not in ("off", "0", "false", "no")
 HIDE_DELAY_S = 1.5
+READING_HOLD_S = 12  # after the user scrolls a reply, wait this long before hiding
+_reading_until = 0.0
 _win_lock = threading.Lock()
 _hwnd = None
 _want_visible = False
@@ -258,6 +271,8 @@ def hide() -> None:
     def later():
         global _want_visible
         time.sleep(HIDE_DELAY_S)
+        while time.time() < _reading_until and _state.get("mode") == "idle":
+            time.sleep(0.5)  # still reading a long reply
         if _state.get("mode") == "idle":
             _want_visible = False
             _apply_visibility()

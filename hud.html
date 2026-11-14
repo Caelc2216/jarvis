@@ -52,7 +52,13 @@
   body.listening .levelring { opacity: .9; }
 
   .label { font-family: var(--mono); font-size: 13px; letter-spacing: .26em; color: var(--c); transition: color .3s; }
-  .caption { margin: 0; max-width: 560px; min-height: 3em; text-align: center; font-size: 17px; line-height: 1.45; }
+  .caption { margin: 0; max-width: 560px; min-height: 3em; text-align: center; font-size: 17px; line-height: 1.45;
+             flex: 0 1 auto; overflow-y: auto; overscroll-behavior: contain; padding: 0 8px;
+             scrollbar-width: thin; scrollbar-color: var(--line) transparent; user-select: text; }
+  /* A long reply fades at the edges that have more text past them. */
+  .caption.more-below { -webkit-mask-image: linear-gradient(#000 calc(100% - 2.2em), transparent); }
+  .caption.more-above { -webkit-mask-image: linear-gradient(transparent, #000 2.2em); }
+  .caption.more-above.more-below { -webkit-mask-image: linear-gradient(transparent, #000 2.2em, #000 calc(100% - 2.2em), transparent); }
 
   .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 12px 16px; }
   .k { font-family: var(--mono); font-size: 11px; letter-spacing: .14em; color: var(--muted); }
@@ -155,7 +161,7 @@
     $('label').textContent = look.label;
     $('r2').setAttribute('stroke-dasharray', look.dash);
     $('heart').setAttribute('fill-opacity', look.glow);
-    $('caption').textContent = s.mode === 'thinking' && !s.caption ? 'One moment…' : (s.caption || '');
+    setCaption(s.mode === 'thinking' && !s.caption ? 'One moment…' : (s.caption || ''));
     $('you').textContent = s.you || '';
     $('jarvis').textContent = s.jarvis || 'Ready when you are.';
     $('brain').textContent = s.brain || '';
@@ -173,6 +179,40 @@
       li.append(t, x); log.append(li);
     }
   }
+  // ---- Long replies: scroll along with the voice; any scrolling by the user takes over. ----
+  const cap = $('caption');
+  let follow = null;      // { start, duration } while auto-scrolling
+  let manual = false;     // the user scrolled this reply themselves
+  function edges() {
+    const more = cap.scrollHeight - cap.clientHeight > 2;
+    cap.classList.toggle('more-above', more && cap.scrollTop > 2);
+    cap.classList.toggle('more-below', more && cap.scrollTop < cap.scrollHeight - cap.clientHeight - 2);
+  }
+  function setCaption(text) {
+    if (cap.textContent === text) return;   // unrelated updates (music, activity) keep the scroll
+    cap.textContent = text; cap.scrollTop = 0; manual = false; follow = null; edges();
+  }
+  // A timer rather than requestAnimationFrame: animation frames pause when the window is covered.
+  setInterval(() => {
+    if (!follow || manual) return;
+    const frac = Math.min(1, (performance.now() - follow.start) / (follow.duration * 1000));
+    const room = cap.scrollHeight - cap.clientHeight;
+    if (room > 0) {
+      // Keep the words being spoken a little above the middle of the box.
+      const target = frac * cap.scrollHeight - cap.clientHeight * 0.4;
+      cap.scrollTop = Math.max(0, Math.min(room, target));
+    }
+    edges();
+    if (frac >= 1) follow = null;
+  }, 50);
+  function takeOver() {
+    manual = true; follow = null;
+    fetch('/reading', { method: 'POST' }).catch(() => {});  // keep the HUD up while they read
+  }
+  for (const ev of ['wheel', 'touchstart', 'pointerdown', 'keydown']) cap.addEventListener(ev, takeOver, { passive: true });
+  cap.addEventListener('scroll', edges, { passive: true });
+  window.addEventListener('resize', edges);
+
   function tick() {
     const d = new Date();
     $('clock').textContent = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -180,14 +220,20 @@
     $('time2').textContent = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   }
   tick(); setInterval(tick, 1000);
+  let lostJarvis = false;
   function connect() {
     const es = new EventSource('/events');
+    es.onopen = () => { if (lostJarvis) location.reload(); };  // Jarvis restarted (maybe updated): load the new page
     es.addEventListener('state', (e) => render(JSON.parse(e.data)));
+    es.addEventListener('speak', (e) => {
+      if (manual) return;
+      follow = { start: performance.now(), duration: JSON.parse(e.data).duration };
+    });
     es.addEventListener('level', (e) => {
       const v = JSON.parse(e.data);
       $('levelring').style.transform = `scale(${1 + v * 0.35})`;
     });
-    es.onerror = () => { es.close(); document.body.className = 'idle'; $('label').textContent = 'OFFLINE';
+    es.onerror = () => { es.close(); lostJarvis = true; document.body.className = 'idle'; $('label').textContent = 'OFFLINE';
                          $('caption').textContent = 'Jarvis isn’t running.'; setTimeout(connect, 3000); };
   }
   connect();
