@@ -27,7 +27,7 @@ LOG = HERE / "update.log"
 
 # Never overwritten or deleted by an update: everything personal or learned on this PC.
 KEEP = {".env", "memory.json", "routines.json", "aliases.json", "apps.json", "devices.json", "timers.json",
-        "routine_windows.json", "close_history.json", "update_state.json", "jarvis.log", "update.log",
+        "routine_windows.json", "close_history.json", "update_state.json", "update_announced.txt","jarvis.log", "update.log",
         "icon.png", "jarvis.ico", "metrics.jsonl", "tinytuya.json", "snapshot.json", "tuya-raw.json"}
 KEEP_DIRS = {"backups", ".hud-profile", "plugins", ".git", "__pycache__", "dist"}
 
@@ -82,6 +82,38 @@ def update_available() -> str:
         return json.loads(STATE.read_text(encoding="utf-8")).get("available", "")
     except (FileNotFoundError, json.JSONDecodeError):
         return ""
+
+
+ANNOUNCED = HERE / "update_announced.txt"
+
+
+def news_to_announce(max_age_s: int = 3600) -> str:
+    """Called when Jarvis starts: if an update just finished (or failed), say how it went, once.
+    Read from update.log, so it also works right after an update done by an older updater."""
+    try:
+        lines = LOG.read_text(encoding="utf-8", errors="replace").splitlines()
+    except FileNotFoundError:
+        return ""
+    for line in reversed(lines):
+        stamp, _, msg = line[:19], line[19:20], line[20:].strip()
+        if msg.startswith(("Updated to ", "Rolled back to ", "Update failed")):
+            break
+    else:
+        return ""
+    try:
+        age = time.time() - time.mktime(time.strptime(stamp, "%Y-%m-%d %H:%M:%S"))
+        done = ANNOUNCED.read_text(encoding="utf-8").strip() if ANNOUNCED.exists() else ""
+    except (ValueError, OSError):
+        return ""
+    if age > max_age_s or done == stamp:
+        return ""
+    ANNOUNCED.write_text(stamp, encoding="utf-8")
+    mine = local()["version"]
+    if msg.startswith("Updated to "):
+        return f"Update complete. I'm now on version {mine}."
+    if msg.startswith("Rolled back"):
+        return f"The update didn't work, so I put the old version back. I'm still on version {mine}."
+    return f"The update didn't go through, so I'm still on version {mine}. I'll try again later."
 
 
 def _program_files(root: Path) -> list[Path]:
@@ -164,8 +196,22 @@ def apply(restart: bool = False) -> str:
         log(f"Updated to {new['version']}.")
         result = f"Updated to version {new['version']}."
     if restart:
-        subprocess.run([_python(), str(HERE / "startup.py"), "start"], cwd=HERE, creationflags=0x08000000)
+        restart_jarvis()
     return result
+
+
+def restart_jarvis() -> None:
+    """Start the background Jarvis again, and make sure it's actually up (try twice)."""
+    for _ in range(2):
+        r = subprocess.run([_python(), str(HERE / "startup.py"), "start"], cwd=HERE, creationflags=0x08000000,
+                           capture_output=True, text=True)
+        log((r.stdout or r.stderr).strip()[-600:] or "(startup.py start said nothing)")
+        time.sleep(3)
+        status = subprocess.run([_python(), str(HERE / "startup.py"), "status"], cwd=HERE,
+                                creationflags=0x08000000, capture_output=True, text=True).stdout
+        if "Running in the background now" in status:
+            return
+    log("Jarvis didn't come back after the update; double-click 'Start Jarvis.bat'.")
 
 
 def start_update_in_background() -> str:
@@ -187,5 +233,5 @@ if __name__ == "__main__":
         log(f"Update failed: {e}")
         print(f"Update failed: {e}")
         if "--restart" in sys.argv:  # never leave Jarvis stopped because an update failed
-            subprocess.run([_python(), str(HERE / "startup.py"), "start"], cwd=HERE, creationflags=0x08000000)
+            restart_jarvis()
         sys.exit(1)

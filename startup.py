@@ -74,7 +74,13 @@ def start() -> None:
         return
     log = HERE / "jarvis.log"
     size_before = log.stat().st_size if log.exists() else 0
-    proc = subprocess.Popen([_pythonw(), str(HERE / "jarvis.py"), "--background"], cwd=HERE)
+    # Fully on its own: it must outlive whatever started it (the updater, a console window, a terminal).
+    flags = 0x00000008 | 0x00000200  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+    cmd = [_pythonw(), str(HERE / "jarvis.py"), "--background"]
+    try:
+        proc = subprocess.Popen(cmd, cwd=HERE, creationflags=flags | 0x01000000)  # ...and CREATE_BREAKAWAY_FROM_JOB
+    except OSError:  # the parent's job doesn't allow breaking away
+        proc = subprocess.Popen(cmd, cwd=HERE, creationflags=flags)
     for _ in range(20):  # give it ~10 s to get going, and catch it if it dies right away
         time.sleep(0.5)
         if proc.poll() is not None:

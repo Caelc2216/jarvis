@@ -171,6 +171,32 @@ def watch_updates() -> None:
         time.sleep(24 * 3600)
 
 
+def announce_update() -> None:
+    """Back from an update: say whether it worked (out loud, and by Discord text)."""
+    try:
+        news = updater.news_to_announce()
+    except Exception as e:
+        print(f"  (couldn't read the update result: {e})")
+        return
+    if not news:
+        return
+    hud.activity(news.split(".")[0])
+
+    def text_it():  # the Discord bot needs a few seconds to connect after a restart
+        for _ in range(30):
+            if remote_discord._client and remote_discord._client.is_ready():
+                remote_discord.notify(news)
+                return
+            time.sleep(2)
+
+    threading.Thread(target=text_it, daemon=True).start()
+    try:
+        speak(news)
+    except Exception as e:
+        print(f"  (couldn't say the update result: {e})")
+    hud.state("idle")
+
+
 def watch_timers() -> None:
     """Speak up when a timer set by any brain is done."""
     while True:
@@ -455,6 +481,7 @@ def main() -> None:
         except Exception as e:
             print(f"  (microphone check failed: {e})")
 
+    announce_update()
     conversation = _conversation_factory(args, brain, listen)
     first_wake = True
     while True:
