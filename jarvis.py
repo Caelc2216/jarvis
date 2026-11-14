@@ -364,7 +364,6 @@ def main() -> None:
                 + (f" Playing: {playing['title']} by {playing['artist']}." if playing else ""))
 
     remote_discord.start(remote_ask, remote_status)
-    told_about_update = ""
 
     def listen() -> str | None:
         """One thing the user says (None means they stayed quiet)."""
@@ -389,8 +388,57 @@ def main() -> None:
         except Exception as e:
             print(f"  (microphone check failed: {e})")
 
+    conversation = _conversation_factory(args, brain, listen)
     first_wake = True
     while True:
+        try:
+            first_wake = conversation(first_wake)
+        except KeyboardInterrupt:
+            raise
+        except Exception as e:  # never let one bad moment (e.g. the mic vanishing during sleep) end Jarvis
+            import sounddevice as sd
+
+            if isinstance(e, sd.PortAudioError) or "PortAudio" in type(e).__name__:
+                recover_audio(e)
+            else:
+                print(f"  (unexpected error, carrying on: {e!r})")
+                time.sleep(3)
+        if (args.text or args.no_clap) and not args.background:
+            return
+
+
+def recover_audio(error) -> None:
+    """The mic or speakers disappeared (sleep/wake, USB unplugged, driver reset).
+    Wait for an input device to come back, then reconnect to the audio system."""
+    import sounddevice as sd
+
+    print(f"  (audio device problem: {error}; waiting for the microphone to come back)")
+    hud.state("idle", "Waiting for the microphone to come back…")
+    waited = 0
+    while True:
+        time.sleep(3)
+        waited += 3
+        try:
+            sd._terminate()           # PortAudio only notices new/changed devices after a restart
+            sd._initialize()
+            chosen = mic_check.device_from_env()
+            if chosen is not None:
+                sd.default.device = (chosen, sd.default.device[1])
+            with sd.InputStream(samplerate=SAMPLE_RATE, channels=1, blocksize=1280, dtype="int16") as s:
+                s.read(1280)          # can we actually record?
+            print(f"  (microphone is back after {waited} s: {sd.query_devices(kind='input')['name']})")
+            hud.state("idle", wake_hint())
+            return
+        except Exception as e:
+            if waited % 60 == 0:
+                print(f"  (still waiting for a microphone after {waited} s: {e})")
+
+
+def _conversation_factory(args, brain, listen):
+    """Builds the wake -> talk cycle used by main(); split out so errors can be recovered from."""
+    state = {"told_about_update": ""}
+
+    def conversation(first_wake: bool) -> bool:
         if not (args.text or args.no_clap):
             wait_for_wake()
         if first_wake:
@@ -398,8 +446,8 @@ def main() -> None:
                 tools.open_app(a)
             ask = routines.load().get("ask_on_wake", "")
             new = updater.update_available()
-            if new and new != told_about_update:  # mention a new version once, then leave it be
-                told_about_update = new
+            if new and new != state["told_about_update"]:  # mention a new version once, then leave it be
+                state["told_about_update"] = new
                 ask = f"By the way, version {new} is out; say 'update yourself' whenever you like. {ask}"
             speak(f"{WELCOME_LINE} {ask}".strip())
             first_wake = False
@@ -427,9 +475,9 @@ def main() -> None:
             except Exception as e:
                 print(f"  (error: {e})")
                 speak("Sorry, something went wrong there. The details are in the log.")
+        return False  # after the first conversation, later wakes just say "Yes?"
 
-        if (args.text or args.no_clap) and not args.background:
-            return
+    return conversation
 
 
 if __name__ == "__main__":
