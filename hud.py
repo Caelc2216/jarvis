@@ -192,6 +192,7 @@ READING_HOLD_S = 12  # after the user scrolls a reply, wait this long before hid
 _reading_until = 0.0
 _win_lock = threading.Lock()
 _hwnd = None
+_opened_once = False  # this Jarvis has opened its own HUD window
 _want_visible = False
 
 
@@ -215,14 +216,22 @@ def _find_hud() -> int | None:
 
 def _ensure_window() -> int | None:
     """Return the HUD window, opening and placing it if it isn't there (or was closed)."""
-    global _hwnd
+    global _hwnd, _opened_once
     import winlayout as wl
 
     if _hwnd and wl.user32.IsWindow(_hwnd):
         return _hwnd
-    _hwnd = _find_hud()
-    if _hwnd:
+    old = _find_hud()
+    if old and _opened_once:
+        _hwnd = old
         return _hwnd
+    if old:  # left over from before this Jarvis started (maybe an older version): replace it with a fresh page
+        wl.user32.PostMessageW(old, 0x0010, 0, 0)  # WM_CLOSE
+        for _ in range(40):
+            time.sleep(0.25)
+            if not wl.user32.IsWindow(old):
+                break
+        time.sleep(1)  # let that browser instance finish exiting before starting a new one
     w, h = (int(x) for x in os.getenv("HUD_SIZE", "420x640").lower().split("x"))
     profile = HERE / ".hud-profile"  # its own Chrome profile, so it never mixes with your tabs
     if not BROWSER:
@@ -234,6 +243,7 @@ def _ensure_window() -> int | None:
                       "--disable-features=Translate"], creationflags=0x08000000)
     _hwnd = wl.wait_for_window(BROWSER_EXE, before=before, title_has="Jarvis", timeout=20)
     if _hwnd:
+        _opened_once = True
         _place(_hwnd)
     return _hwnd
 

@@ -356,7 +356,7 @@ def record_until_silence() -> bytes | None:
     noise = None
     start = time.time()
     print("  (listening...)")
-    hud.state("listening", "")
+    hud.state("listening")  # keep the last reply on screen, so a long one can still be read and scrolled
     with sd.InputStream(samplerate=SAMPLE_RATE, channels=1, blocksize=block, dtype="int16") as stream:
         while time.time() - start < MAX_LISTEN_S:
             data, _ = stream.read(block)
