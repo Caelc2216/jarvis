@@ -58,8 +58,9 @@ MIN_RMS = 0.04         # ...and at least this loud overall
 CLAP_GAP = (0.12, 0.8) # seconds allowed between the two claps
 CLAP_DECAY = 0.35      # a clap drops below this fraction of its peak...
 CLAP_MAX_BLOCKS = 4    # ...within this many 20 ms blocks (speech stays loud longer)
-SILENCE_RMS = 0.015    # below this counts as silence while you're talking
-SILENCE_S = 1.2        # stop recording after this much silence
+SILENCE_RMS = 0.015    # the most it will ever take to count as talking (normally it adapts lower)
+SPEECH_MIN_RMS = 0.003 # the least: anything quieter is never treated as speech
+SILENCE_S = 1.5        # stop recording after this much real silence (noise-gated mics go silent between words)
 MAX_LISTEN_S = 15
 
 _speak_lock = threading.Lock()
@@ -217,6 +218,7 @@ def wait_for_wake() -> str:
 
     model = _load_wake_model()
     clap = _clap_enabled()
+    gain = round(mic_gain(), 1)
     frame = 1280                                   # 80 ms, what the wake word model expects
     sub = int(SAMPLE_RATE * BLOCK_MS / 1000)       # 20 ms pieces for clap detection
     ambient, last_clap, clock, streak = 0.01, -10.0, 0.0, 0
@@ -232,7 +234,9 @@ def wait_for_wake() -> str:
             data, _ = stream.read(frame)
             pcm = data[:, 0]
             if model:
-                score = model.predict(pcm)["hey_jarvis_v0.1"]
+                heard_pcm = pcm if gain == 1.0 else \
+                    np.clip(pcm.astype(np.int32) * gain, -32768, 32767).astype(np.int16)  # quiet mic: turn it up
+                score = model.predict(heard_pcm)["hey_jarvis_v0.1"]
                 streak = streak + 1 if score >= WAKE_THRESHOLD else 0
                 if streak >= WAKE_FRAMES:
                     print("  (heard: Hey Jarvis)")
@@ -264,12 +268,34 @@ def wait_for_wake() -> str:
 wait_for_double_clap = wait_for_wake  # old name
 
 
+_speech_peak = 0.35  # how loud the user's speech usually arrives (learned), used to boost quiet mics
+
+
+def _speech_threshold(noise_floor: float) -> float:
+    """Loudness that counts as talking: just above this room's background noise, never above the old fixed line."""
+    return min(SILENCE_RMS, max(SPEECH_MIN_RMS, noise_floor * 4))
+
+
+def mic_gain() -> float:
+    """How much to turn up the mic for the wake word (MIC_GAIN in .env overrides; else learned)."""
+    forced = os.getenv("MIC_GAIN", "").strip()
+    if forced:
+        return max(0.1, float(forced))
+    return float(np.clip(0.35 / max(_speech_peak, 1e-3), 1.0, 6.0))
+
+
 def record_until_silence() -> bytes | None:
-    """Record one utterance and return it as WAV bytes (None if nothing said)."""
+    """Record one utterance and return it as WAV bytes (None if nothing said).
+
+    Works with quiet mics and mics with a noise gate: the speech threshold follows the room's
+    background noise, it waits for a real pause before stopping, and quiet audio is turned up.
+    """
+    global _speech_peak
     import sounddevice as sd
 
     block = int(SAMPLE_RATE * BLOCK_MS / 1000)
-    chunks, heard, quiet = [], False, 0.0
+    chunks, heard, quiet, loud_run = [], False, 0.0, 0
+    noise = None
     start = time.time()
     print("  (listening...)")
     hud.state("listening", "")
@@ -278,30 +304,47 @@ def record_until_silence() -> bytes | None:
             data, _ = stream.read(block)
             chunks.append(data.copy())
             rms = float(np.sqrt(np.mean((data / 32768.0) ** 2)))
+            if noise is None or (not heard and rms < (noise * 3 + 1e-4)):  # learn the room while nobody talks
+                noise = rms if noise is None else 0.9 * noise + 0.1 * rms
+            threshold = _speech_threshold(noise)
             if len(chunks) % 5 == 0:  # ~10 times a second, make the orb follow your voice
-                hud.level(rms * 8)
-            if rms > SILENCE_RMS:
-                heard, quiet = True, 0.0
-            elif heard:
-                quiet += BLOCK_MS / 1000
-                if quiet >= SILENCE_S:
-                    break
-            elif time.time() - start > 8:
-                return None  # nobody spoke
+                hud.level(rms / max(threshold * 6, 1e-3))
+            if rms > threshold:
+                loud_run += 1
+                if loud_run >= 2:  # two blocks in a row: talking, not a click
+                    heard, quiet = True, 0.0
+            else:
+                loud_run = 0
+                if heard:
+                    quiet += BLOCK_MS / 1000
+                    if quiet >= SILENCE_S:
+                        break
+                elif time.time() - start > 8:
+                    return None  # nobody spoke
     if not heard:
         return None
+    audio = np.concatenate(chunks)[:, 0].astype(np.float32) / 32768.0
+    peak = float(np.abs(audio).max()) or 1e-6
+    _speech_peak = 0.7 * _speech_peak + 0.3 * peak  # remember how loud this user's mic is
+    gain = float(np.clip(0.6 / peak, 1.0, 12.0))     # turn quiet recordings up for better recognition
+    print(f"  (speech level {peak:.3f}, room {noise:.4f}, boosted x{gain:.1f})")
+    pcm = np.clip(audio * gain * 32767, -32768, 32767).astype(np.int16)
     buf = io.BytesIO()
     with wave.open(buf, "wb") as w:
         w.setnchannels(1)
         w.setsampwidth(2)
         w.setframerate(SAMPLE_RATE)
-        w.writeframes(np.concatenate(chunks).tobytes())
+        w.writeframes(pcm.tobytes())
     return buf.getvalue()
+
+
+_el_stt_off = False
 
 
 def transcribe(wav: bytes) -> str:
     # ElevenLabs or OpenAI speech-to-text if you have a key, else Google's free recognizer.
-    if os.getenv("ELEVENLABS_API_KEY"):
+    global _el_stt_off
+    if os.getenv("ELEVENLABS_API_KEY") and not _el_stt_off:
         import requests
 
         try:
@@ -316,6 +359,9 @@ def transcribe(wav: bytes) -> str:
             return r.json().get("text", "").strip()
         except Exception as e:
             print(f"  (ElevenLabs speech-to-text failed: {e})")
+            if str(e).startswith(("401", "403")):  # the key can't do this; stop paying the delay every time
+                _el_stt_off = True
+                print("  (not using ElevenLabs speech-to-text until restart; give the key 'Speech to Text' access to use it)")
     if os.getenv("OPENAI_API_KEY"):
         from openai import OpenAI
 
