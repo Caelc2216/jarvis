@@ -127,11 +127,36 @@ def summary(hours: float = 24, spoken: bool = False) -> str:
         pc = [r["pc_cpu"] for r in res]
         lines.append(f"  Whole PC: CPU typically {_pct(pc, 50):.0f}% (peaks {max(pc):.0f}%), "
                      f"memory {_pct([r['pc_mem'] for r in res], 50):.0f}% used")
+    lines += _voice_credits()
     lines += _advice(replies, res)
     text = "\n".join(lines)
     if spoken:  # shorter, no symbols, for reading aloud
         text = text.replace("·", ",").replace("  ", " ")
     return text
+
+
+def _voice_credits() -> list[str]:
+    """How much of this month's ElevenLabs voice allowance is left (shared by every PC using the key)."""
+    key = os.getenv("ELEVENLABS_API_KEY", "").strip()
+    if not key:
+        return []
+    try:
+        import requests
+
+        r = requests.get("https://api.elevenlabs.io/v1/user/subscription", headers={"xi-api-key": key}, timeout=8)
+        if not r.ok:
+            return []
+        s = r.json()
+        used, limit = s.get("character_count", 0), s.get("character_limit", 0) or 1
+        reset = time.strftime("%b %d", time.localtime(s.get("next_character_count_reset_unix", 0)))
+    except Exception:
+        return []
+    out = [f"  Voice credits (ElevenLabs): {used:,} of {limit:,} used this month ({used * 100 // limit}%), "
+           f"resets {reset}"]
+    if used >= limit * 0.8:
+        out.append("  Tip: voice credits are nearly gone; Jarvis switches to the Windows voice when they run out. "
+                   "Shorter questions use fewer, or upgrade the ElevenLabs plan.")
+    return out
 
 
 def _advice(replies, res) -> list[str]:
@@ -151,6 +176,12 @@ def _advice(replies, res) -> list[str]:
 
 
 if __name__ == "__main__":
+    try:
+        from dotenv import load_dotenv
+
+        load_dotenv(HERE / ".env")
+    except ImportError:
+        pass
     hours = float(sys.argv[1]) if len(sys.argv) > 1 else 24
     print(summary(hours))
     if os.environ.get("JARVIS_PAUSE"):

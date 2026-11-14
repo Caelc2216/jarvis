@@ -198,8 +198,9 @@
     const frac = Math.min(1, (performance.now() - follow.start) / (follow.duration * 1000));
     const room = cap.scrollHeight - cap.clientHeight;
     if (room > 0) {
-      // Keep the words being spoken a little above the middle of the box.
-      const target = frac * cap.scrollHeight - cap.clientHeight * 0.4;
+      // Keep the words being spoken a little above the middle of the box. (The voice may read only
+      // the first part of a long answer; the rest stays on screen to scroll through.)
+      const target = frac * follow.portion * cap.scrollHeight - cap.clientHeight * 0.4;
       cap.scrollTop = Math.max(0, Math.min(room, target));
     }
     edges();
@@ -227,7 +228,8 @@
     es.addEventListener('state', (e) => render(JSON.parse(e.data)));
     es.addEventListener('speak', (e) => {
       if (manual) return;
-      follow = { start: performance.now(), duration: JSON.parse(e.data).duration };
+      const d = JSON.parse(e.data);
+      follow = { start: performance.now(), duration: d.duration, portion: d.portion || 1 };
     });
     es.addEventListener('level', (e) => {
       const v = JSON.parse(e.data);

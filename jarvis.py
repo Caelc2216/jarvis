@@ -43,6 +43,7 @@ import remote_discord  # noqa: E402
 import mic_check  # noqa: E402
 import metrics  # noqa: E402
 import routines  # noqa: E402
+import speech  # noqa: E402
 import tools  # noqa: E402  (needs .env loaded first)
 from brains import Router  # noqa: E402
 
@@ -68,22 +69,39 @@ _speak_lock = threading.Lock()
 
 
 # ------------------------------------------------------------------ speech --
+_el_out_until = 0.0     # ElevenLabs credits ran out: skip it until then
+_el_out_told = False
+
+
 def speak(text: str) -> None:
+    global _el_out_until, _el_out_told
     print(f"Jarvis: {text}")
     if not text:
         return
-    hud.said(text)
+    # The display shows the whole answer; the voice says the first few sentences (saves voice credits).
+    say, portion = speech.spoken(text, display_on=hud.active())
+    hud.said(speech.tidy(text) or text)
+    if not say:
+        return
     with _speak_lock:  # timers can speak from another thread
-        if os.getenv("ELEVENLABS_API_KEY") and os.getenv("ELEVENLABS_VOICE_ID"):
+        if os.getenv("ELEVENLABS_API_KEY") and os.getenv("ELEVENLABS_VOICE_ID") and time.time() >= _el_out_until:
             try:
-                return _speak_elevenlabs(text)
+                return _speak_elevenlabs(say, portion)
             except Exception as e:
                 print(f"  (ElevenLabs failed: {e}; using built-in voice)")
+                if "quota" in str(e).lower() or "credits" in str(e).lower():
+                    _el_out_until = time.time() + 3600  # check again in an hour (credits may be topped up)
+                    if not _el_out_told:
+                        _el_out_told = True
+                        note = ("I've used up this month's ElevenLabs voice credits, so I'll use the Windows "
+                                "voice until they reset.")
+                        say = f"{note} {say}"
+                        remote_discord.notify(note + " Upgrading the ElevenLabs plan brings the voice back sooner.")
         import pyttsx3
 
         engine = pyttsx3.init()
-        hud.speaking(len(text.split()) / 2.6)  # about 2.6 words a second
-        engine.say(text)
+        hud.speaking(len(say.split()) / 2.6, portion)  # about 2.6 words a second
+        engine.say(say)
         engine.runAndWait()
 
 
@@ -99,7 +117,7 @@ def _raise_with_reason(r) -> None:
     raise RuntimeError(f"{r.status_code}: {str(detail)[:300]}")
 
 
-def _speak_elevenlabs(text: str) -> None:
+def _speak_elevenlabs(text: str, portion: float = 1.0) -> None:
     import requests
     import sounddevice as sd
 
@@ -130,7 +148,7 @@ def _speak_elevenlabs(text: str) -> None:
     _raise_with_reason(r)  # anything else (bad key, out of credits) won't fix itself by retrying
     TIMING["tts_s"] = time.time() - t0  # how long until the voice can start
     audio = np.frombuffer(r.content, dtype=np.int16)
-    hud.speaking(len(audio) / 22050)
+    hud.speaking(len(audio) / 22050, portion)
     try:
         sd.play(audio, 22050)
         sd.wait()

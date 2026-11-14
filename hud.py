@@ -67,10 +67,16 @@ def said(text: str) -> None:
         show()
 
 
-def speaking(duration_s: float) -> None:
-    """The voice just started and lasts this long: the HUD scrolls a long reply along with it."""
+def active() -> bool:
+    """Is the on-screen display running?"""
+    return _server is not None
+
+
+def speaking(duration_s: float, portion: float = 1.0) -> None:
+    """The voice just started and lasts this long, reading this fraction of the reply on screen:
+    the HUD scrolls along with it."""
     if _server is not None:
-        _push("speak", {"duration": round(max(0.5, duration_s), 2)})
+        _push("speak", {"duration": round(max(0.5, duration_s), 2), "portion": round(min(1.0, portion), 3)})
 
 
 def heard(text: str) -> None:
