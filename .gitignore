@@ -32,3 +32,4 @@ models/*.tflite
 models/silero_vad.onnx
 metrics.jsonl
 coder_live.log
+voice_state.json

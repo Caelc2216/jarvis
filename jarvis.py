@@ -11,6 +11,7 @@ it cannot run commands or touch files beyond its own memory.json.
 
 import argparse
 import io
+import json
 import os
 import re
 import sys
@@ -71,12 +72,56 @@ _speak_lock = threading.Lock()
 
 
 # ------------------------------------------------------------------ speech --
-_el_out_until = 0.0     # ElevenLabs credits ran out: skip it until then
-_el_out_told = False
+# When the ElevenLabs credits run out, Jarvis says so ONCE per month (remembered in voice_state.json,
+# so restarts and updates don't repeat it) and skips ElevenLabs until the credits reset.
+VOICE_STATE = Path(__file__).with_name("voice_state.json")
+
+
+def _voice_state() -> dict:
+    try:
+        return json.loads(VOICE_STATE.read_text(encoding="utf-8"))
+    except (FileNotFoundError, ValueError):
+        return {}
+
+
+def _credits_reset_at() -> float:
+    """When this month's ElevenLabs credits come back (0 if ElevenLabs won't say)."""
+    try:
+        import requests
+
+        r = requests.get("https://api.elevenlabs.io/v1/user/subscription", timeout=8,
+                         headers={"xi-api-key": os.environ["ELEVENLABS_API_KEY"]})
+        return float(r.json().get("next_character_count_reset_unix", 0)) if r.ok else 0.0
+    except Exception:
+        return 0.0
+
+
+def _elevenlabs_paused() -> bool:
+    """Out of credits and not reset yet? (Checks again hourly in case the plan was topped up.)"""
+    st = _voice_state()
+    return time.time() < st.get("retry_at", 0)
+
+
+def _credits_ran_out() -> str:
+    """Remember it, and return the notice to give the user, or "" if they've already been told."""
+    st, now = _voice_state(), time.time()
+    reset = st.get("reset_at", 0) if st.get("reset_at", 0) > now else _credits_reset_at()
+    already = st.get("told_at") and (now < st.get("reset_at", 0) if st.get("reset_at") else
+                                     now - st["told_at"] < 30 * 86400)
+    st.update(reset_at=reset, retry_at=min(reset, now + 3600) if reset > now else now + 3600)
+    if not already:
+        st["told_at"] = now
+    try:
+        VOICE_STATE.write_text(json.dumps(st), encoding="utf-8")
+    except OSError:
+        pass
+    if already:
+        return ""
+    when = f" on {time.strftime('%B %d', time.localtime(reset)).replace(' 0', ' ')}" if reset > now else ""
+    return f"I've used up this month's ElevenLabs voice credits, so I'll use the Windows voice until they reset{when}."
 
 
 def speak(text: str) -> None:
-    global _el_out_until, _el_out_told
     print(f"Jarvis: {text}")
     if not text:
         return
@@ -86,17 +131,17 @@ def speak(text: str) -> None:
     if not say:
         return
     with _speak_lock:  # timers can speak from another thread
-        if os.getenv("ELEVENLABS_API_KEY") and os.getenv("ELEVENLABS_VOICE_ID") and time.time() >= _el_out_until:
+        if os.getenv("ELEVENLABS_API_KEY") and os.getenv("ELEVENLABS_VOICE_ID") and not _elevenlabs_paused():
             try:
-                return _speak_elevenlabs(say, portion)
+                _speak_elevenlabs(say, portion)
+                if VOICE_STATE.exists():  # it works again (reset or topped up): forget the old notice
+                    VOICE_STATE.unlink(missing_ok=True)
+                return
             except Exception as e:
                 print(f"  (ElevenLabs failed: {e}; using built-in voice)")
                 if "quota" in str(e).lower() or "credits" in str(e).lower():
-                    _el_out_until = time.time() + 3600  # check again in an hour (credits may be topped up)
-                    if not _el_out_told:
-                        _el_out_told = True
-                        note = ("I've used up this month's ElevenLabs voice credits, so I'll use the Windows "
-                                "voice until they reset.")
+                    note = _credits_ran_out()
+                    if note:
                         say = f"{note} {say}"
                         remote_discord.notify(note + " Upgrading the ElevenLabs plan brings the voice back sooner.")
         import pyttsx3
