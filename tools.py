@@ -274,6 +274,15 @@ def jarvis_stats(hours: float = 24) -> str:
     return metrics.summary(hours)
 
 
+def set_input_mode(mode: str, read_aloud: bool | None = None) -> str:
+    import hud
+
+    mode = (mode or "").lower().strip()
+    if mode not in ("voice", "text"):
+        return "Mode must be 'voice' or 'text'."
+    return hud.set_input(mode, read_aloud)
+
+
 # --------------------------------------------------------------- registry --
 def _s(props: dict, required: list[str]) -> dict:
     return {"type": "object", "properties": props, "required": required, "additionalProperties": False}
@@ -304,6 +313,11 @@ TOOLS = [
     (jarvis_stats, "How fast Jarvis has been answering and how much CPU/memory it (and the local brain) uses. "
      "Summarise the key numbers briefly when speaking.",
      _s({"hours": {"type": "number", "description": "How far back, default 24"}}, [])),
+    (set_input_mode, "Switch between voice mode (wake word and microphone) and text mode (the user types on "
+     "the on-screen display; the microphone turns off). read_aloud: in text mode, also speak replies.",
+     _s({"mode": {"type": "string", "enum": ["voice", "text"]},
+         "read_aloud": {"type": "boolean", "description": "Text mode only; leave out to keep the current choice"}},
+        ["mode"])),
     # Routines the user builds by talking
     (create_routine, "Create (or replace) a routine: a name the user says to open several apps at once, "
      "e.g. name 'homework', apps ['Google Docs', 'Spotify']. Confirm the app list with the user first.",

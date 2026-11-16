@@ -20,6 +20,42 @@
 
   .app { height: 100%; display: grid; gap: 18px; padding: 20px 22px;
          grid-template-columns: 1fr; grid-template-rows: auto 1fr auto; }
+
+  /* Voice / Text switch */
+  .modes { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; padding: 2px; gap: 2px; }
+  .modes button { all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
+                  font-family: var(--mono); font-size: 11px; letter-spacing: .08em; color: var(--muted);
+                  padding: 5px 10px; border-radius: 999px; transition: background .2s, color .2s; }
+  .modes button:hover { color: var(--text); }
+  .modes button[aria-pressed="true"] { background: #12303D; color: var(--accent); }
+  .modes button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .modes svg { width: 14px; height: 14px; flex-shrink: 0; }
+
+  /* Text mode: the message box */
+  .composer { display: none; flex-direction: column; gap: 8px; }
+  [data-input="text"] .composer { display: flex; }
+  .composer .row { display: flex; gap: 8px; }
+  .composer input[type=text] { flex: 1; min-width: 0; background: var(--panel); color: var(--text);
+                  border: 1px solid var(--line); border-radius: 12px; padding: 11px 14px; font: 15px var(--sans);
+                  user-select: text; outline: none; transition: border-color .2s; }
+  .composer input[type=text]:focus { border-color: var(--accent); }
+  .composer input[type=text]::placeholder { color: var(--idle); }
+  .send { all: unset; cursor: pointer; width: 44px; display: grid; place-items: center; border-radius: 12px;
+          background: #12303D; color: var(--accent); }
+  .send:hover { background: #17404F; } .send:focus-visible { outline: 2px solid var(--accent); }
+  .send svg { width: 18px; height: 18px; }
+  .aloud { display: inline-flex; align-items: center; gap: 10px; align-self: flex-start; cursor: pointer;
+           font-family: var(--mono); font-size: 11.5px; letter-spacing: .06em; color: var(--muted); }
+  .aloud input { position: absolute; opacity: 0; pointer-events: none; }
+  .aloud .sw { width: 30px; height: 17px; border-radius: 9px; background: var(--line); position: relative;
+               transition: background .2s; flex-shrink: 0; }
+  .aloud .sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 13px; height: 13px;
+                      border-radius: 50%; background: var(--muted); transition: transform .2s, background .2s; }
+  .aloud input:checked + .sw { background: #12303D; }
+  .aloud input:checked + .sw::after { transform: translateX(13px); background: var(--accent); }
+  .aloud input:focus-visible + .sw { outline: 2px solid var(--accent); outline-offset: 2px; }
+  [data-input="text"] .orb { width: min(170px, 40vw, 26vh); }
+  @media (max-width: 899px) { .modes .t { display: none; } .modes button { padding: 5px 8px; } }
   header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
   .brand { display: flex; align-items: center; gap: 12px; }
   .word { font-weight: 700; letter-spacing: .32em; font-size: 16px; }
@@ -86,7 +122,8 @@
   /* Wide window: the full HUD with side panels. */
   @media (min-width: 900px) {
     .app { grid-template-columns: 260px minmax(0, 1fr) 290px; grid-template-rows: auto 1fr auto; padding: 26px 34px; gap: 22px 28px; }
-    header { grid-column: 1 / -1; } .talk { grid-column: 1 / -1; }
+    header { grid-column: 1 / -1; } .talk, .composer { grid-column: 1 / -1; }
+    [data-input="text"] .orb { width: min(260px, 26vw, 34vh); }
     .side { display: flex; } .orb { width: min(400px, 40vw, 58vh); }
     .caption { font-size: 21px; } .word { font-size: 20px; }
   }
@@ -102,7 +139,15 @@
       <div class="word">JARVIS</div>
       <div class="chip" id="routine"></div>
     </div>
-    <div class="meta"><span class="dot"></span><span id="brain"></span><span class="clock" id="clock"></span></div>
+    <div class="meta">
+      <div class="modes" role="group" aria-label="How to talk to Jarvis">
+        <button type="button" data-mode="voice" aria-pressed="true" title="Voice: say “Hey Jarvis”">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg><span class="t">VOICE</span></button>
+        <button type="button" data-mode="text" aria-pressed="false" title="Text: type to Jarvis (microphone off)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg><span class="t">TEXT</span></button>
+      </div>
+      <span class="dot"></span><span id="brain"></span><span class="clock" id="clock"></span>
+    </div>
   </header>
 
   <aside class="side" aria-label="System">
@@ -146,6 +191,16 @@
     <div class="card"><div class="k">YOU</div><div class="v" id="you"></div></div>
     <div class="card"><div class="k jarvis-k">JARVIS</div><div class="v" id="jarvis">Ready when you are.</div></div>
   </div>
+
+  <form class="composer" id="composer" autocomplete="off">
+    <div class="row">
+      <input type="text" id="msg" maxlength="2000" placeholder="Type to Jarvis…" aria-label="Message to Jarvis">
+      <button class="send" type="submit" aria-label="Send">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+      </button>
+    </div>
+    <label class="aloud"><input type="checkbox" id="aloud"><span class="sw"></span>READ REPLIES ALOUD</label>
+  </form>
 </div>
 <script>
   const $ = (id) => document.getElementById(id);
@@ -158,7 +213,13 @@
   function render(s) {
     const look = LOOK[s.mode] || LOOK.idle;
     document.body.className = s.mode in LOOK ? s.mode : 'idle';
-    $('label').textContent = look.label;
+    const text = s.input === 'text';
+    const wasText = document.documentElement.dataset.input === 'text';
+    document.documentElement.dataset.input = text ? 'text' : 'voice';
+    for (const b of document.querySelectorAll('.modes button')) b.setAttribute('aria-pressed', String(b.dataset.mode === s.input));
+    $('aloud').checked = s.read_aloud !== false;
+    if (text && !wasText && document.hasFocus()) setTimeout(() => $('msg').focus(), 0);
+    $('label').textContent = text && s.mode === 'idle' ? 'TEXT MODE' : look.label;
     $('r2').setAttribute('stroke-dasharray', look.dash);
     $('heart').setAttribute('fill-opacity', look.glow);
     setCaption(s.mode === 'thinking' && !s.caption ? 'One moment…' : (s.caption || ''));
@@ -221,6 +282,24 @@
     $('time2').textContent = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   }
   tick(); setInterval(tick, 1000);
+  // ---- Voice / text mode ----
+  const TOKEN = '__JARVIS_TOKEN__';  // filled in by Jarvis when it serves this page
+  function post(path, body) {
+    return fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jarvis-Token': TOKEN },
+                         body: JSON.stringify(body) });
+  }
+  for (const b of document.querySelectorAll('.modes button')) {
+    b.addEventListener('click', () => post('/settings', { input: b.dataset.mode }).catch(() => {}));
+  }
+  $('aloud').addEventListener('change', (e) => post('/settings', { read_aloud: e.target.checked }).catch(() => {}));
+  $('composer').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const box = $('msg'), text = box.value.trim();
+    if (!text) return;
+    post('/ask', { text }).then((r) => { if (r.ok) box.value = ''; }).catch(() => {});
+    box.focus();
+  });
+
   let lostJarvis = false;
   function connect() {
     const es = new EventSource('/events');

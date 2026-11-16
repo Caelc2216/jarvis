@@ -289,7 +289,21 @@ def _clap_enabled() -> bool:
 
 
 def wait_for_wake() -> str:
-    """Block until "Hey Jarvis" (or a double clap, if enabled). Returns "hey jarvis" or "clap"."""
+    """Block until "Hey Jarvis" (or a double clap, if enabled). Returns "hey jarvis" or "clap".
+    In text mode the microphone is off: this waits (mic closed) until voice mode is back."""
+    while True:
+        if hud.input_mode() == "text":
+            print("  (text mode: microphone off)")
+            while hud.input_mode() == "text":
+                time.sleep(0.3)
+            print("  (voice mode)")
+        heard = _listen_for_wake()
+        if heard:
+            return heard
+
+
+def _listen_for_wake() -> str | None:
+    """None means text mode was switched on while listening."""
     import sounddevice as sd
 
     model = _load_wake_model()
@@ -301,13 +315,15 @@ def wait_for_wake() -> str:
     spike = None  # (time, peak, blocks since) of a loud moment that might be a clap
     if model:
         model.reset()
-    hud.state("idle", wake_hint())
+    hud.state("idle", wake_hint() if hud.input_mode() == "voice" else None)
     hud.set_info(routine="")
     print("Listening for " + " or ".join(filter(None, ['"Hey Jarvis"' if model else "", "a double clap" if clap else ""]))
           + "... (Ctrl+C to quit)")
     with sd.InputStream(samplerate=SAMPLE_RATE, channels=1, blocksize=frame, dtype="int16") as stream:
         while True:
             data, _ = stream.read(frame)
+            if hud.input_mode() == "text":
+                return None  # closes the microphone
             pcm = data[:, 0]
             if model:
                 heard_pcm = pcm if gain == 1.0 else \
@@ -369,6 +385,8 @@ def record_until_silence() -> bytes | None:
     global _speech_peak
     import sounddevice as sd
 
+    if hud.input_mode() == "text":  # switched to text mode mid-conversation
+        return None
     block = int(SAMPLE_RATE * BLOCK_MS / 1000)
     chunks, heard, quiet, loud_run = [], False, 0.0, 0
     noise = None
@@ -491,6 +509,7 @@ def main() -> None:
                 + (f" Playing: {playing['title']} by {playing['artist']}." if playing else ""))
 
     remote_discord.start(remote_ask, remote_status)
+    threading.Thread(target=serve_typed, args=(brain,), daemon=True).start()  # text mode on the display
 
     def listen() -> str | None:
         """One thing the user says (None means they stayed quiet)."""
@@ -575,6 +594,51 @@ def record_reply(brain, heard: str, reply: str) -> None:
     hud.activity(f"Reply in {total:.1f} s (thinking {think:.1f})")
 
 
+BRAIN_LOCK = threading.Lock()  # voice and typed messages take turns with the same conversation
+
+
+def serve_typed(brain) -> None:
+    """Text mode: answer messages typed on the display. Replies show on screen, and are also
+    spoken if "Read replies aloud" is on."""
+
+    def say(text: str) -> None:
+        if hud.read_aloud():
+            speak(text)
+            hud.state("idle")
+        else:
+            print(f"Jarvis: {text}")
+            hud.replied(speech.tidy(text) or text)
+
+    def next_message() -> str:  # for routines that ask a follow-up (like which project to open)
+        hud.state("idle")
+        return hud.next_typed(timeout=120) or ""
+
+    while True:
+        text = hud.next_typed()
+        if not text:
+            continue
+        print(f"You (typed): {text}")
+        hud.heard(text)
+        try:
+            if name := routines.match_save(text):
+                routines.save_layout(name, say)
+            elif name := routines.match(text):
+                routines.run(name, say, next_message)
+            else:
+                t0 = time.time()
+                with BRAIN_LOCK:
+                    reply = brain.ask(text)
+                think = time.time() - t0
+                metrics.record("reply", via="text", brain=getattr(brain, "last", "?"), think_s=think,
+                               chars=len(reply or ""))
+                say(reply or "Sorry, I didn't get anything back there.")
+                hud.activity(f"Reply in {think:.1f} s")
+        except Exception as e:
+            print(f"  (error: {e})")
+            say("Sorry, something went wrong there. The details are in the log.")
+        hud.set_info(routine="")
+
+
 def _conversation_factory(args, brain, listen):
     """Builds the wake -> talk cycle used by main(); split out so errors can be recovered from."""
     state = {"told_about_update": ""}
@@ -599,6 +663,8 @@ def _conversation_factory(args, brain, listen):
         while True:
             heard = listen()
             if heard is None:
+                if hud.input_mode() == "text":
+                    break  # switched to typing: the text-mode handler takes it from here
                 speak("I'll be here if you need me.")
                 break
             if not heard:
@@ -613,7 +679,8 @@ def _conversation_factory(args, brain, listen):
                     routines.run(name, speak, listen)
                 else:
                     t0 = time.time()
-                    reply = brain.ask(heard)
+                    with BRAIN_LOCK:  # typed messages share this conversation
+                        reply = brain.ask(heard)
                     TIMING["think_s"] = time.time() - t0
                     TIMING.pop("tts_s", None)
                     speak(reply)

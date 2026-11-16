@@ -31,10 +31,26 @@ BROWSER = paths.browser()                      # Chrome, or Edge if Chrome isn't
 BROWSER_EXE = os.path.basename(BROWSER).lower()
 
 _state = {"mode": "idle", "caption": "Say “Hey Jarvis”.", "you": "", "jarvis": "",
-          "brain": "", "routine": "", "activity": [], "playing": None, "level": 0.0}
+          "brain": "", "routine": "", "activity": [], "playing": None, "level": 0.0,
+          "input": "voice", "read_aloud": True}
 _lock = threading.Lock()
 _clients: list[queue.Queue] = []
 _server = None
+
+# Voice or text mode, chosen with the buttons on the display (or by asking Jarvis). Remembered here.
+SETTINGS = HERE / "ui_settings.json"
+# Typed messages and setting changes must carry this token, so no web page you visit can send
+# commands to Jarvis through this local server. Other Jarvis processes (its tools) read it from the file.
+TOKEN_FILE = HERE / ".hud_token"
+_token = ""
+_typed: queue.Queue = queue.Queue()
+
+try:
+    _saved = json.loads(SETTINGS.read_text(encoding="utf-8"))
+    _state["input"] = "text" if _saved.get("input") == "text" else "voice"
+    _state["read_aloud"] = bool(_saved.get("read_aloud", True))
+except (FileNotFoundError, ValueError):
+    pass
 
 
 # ------------------------------------------------------------ publishing --
@@ -70,6 +86,68 @@ def said(text: str) -> None:
 def active() -> bool:
     """Is the on-screen display running?"""
     return _server is not None
+
+
+# ------------------------------------------------------------ text mode --
+def input_mode() -> str:
+    """"voice" (wake word + microphone) or "text" (type on the display; microphone off)."""
+    return _state.get("input", "voice") if _server is not None else "voice"
+
+
+def read_aloud() -> bool:
+    """In text mode: also speak the replies?"""
+    return bool(_state.get("read_aloud", True))
+
+
+def set_input(mode: str | None = None, read_aloud: bool | None = None) -> str:
+    """Switch voice/text mode (and the read-aloud option). Works from other processes too (Jarvis's tools)."""
+    if _server is None:
+        return _post_settings(mode, read_aloud)
+    changes = {}
+    if mode in ("voice", "text"):
+        changes["input"] = mode
+        if mode == "text" and _state.get("mode") == "idle" and mode != _state.get("input"):
+            changes["caption"] = "Text mode. Type a message below."
+    if read_aloud is not None:
+        changes["read_aloud"] = bool(read_aloud)
+    _update(**changes)
+    try:
+        SETTINGS.write_text(json.dumps({"input": _state["input"], "read_aloud": _state["read_aloud"]}),
+                            encoding="utf-8")
+    except OSError:
+        pass
+    if _state["input"] == "text":
+        show()  # the display is where you type, so it stays up
+    elif _state.get("mode") == "idle":
+        hide()
+    return f"{'Text' if _state['input'] == 'text' else 'Voice'} mode" + (
+        f", replies read aloud {'on' if _state['read_aloud'] else 'off'}" if _state["input"] == "text" else "") + "."
+
+
+def _post_settings(mode, read_aloud) -> str:
+    try:
+        token = TOKEN_FILE.read_text(encoding="utf-8").strip()
+        body = json.dumps({k: v for k, v in (("input", mode), ("read_aloud", read_aloud)) if v is not None})
+        req = urllib.request.Request(f"http://127.0.0.1:{PORT}/settings", data=body.encode(), method="POST",
+                                     headers={"Content-Type": "application/json", "X-Jarvis-Token": token})
+        urllib.request.urlopen(req, timeout=2).close()
+        return f"Switched to {mode} mode." if mode else "Done."
+    except Exception:
+        return "Text mode needs the on-screen display, and it's turned off (HUD=off or PERFORMANCE=lite)."
+
+
+def next_typed(timeout: float | None = None) -> str | None:
+    """The next message typed on the display (None if nothing arrives within the timeout)."""
+    try:
+        return _typed.get(timeout=timeout)
+    except queue.Empty:
+        return None
+
+
+def replied(text: str) -> None:
+    """Show a reply without speaking it (text mode with read-aloud off)."""
+    if _server is not None:
+        _update(mode="idle", caption=text, jarvis=text)
 
 
 def speaking(duration_s: float, portion: float = 1.0) -> None:
@@ -117,7 +195,7 @@ class _Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path in ("/", "/index.html"):
-            body = (HERE / "hud.html").read_bytes()
+            body = (HERE / "hud.html").read_bytes().replace(b"__JARVIS_TOKEN__", _token.encode())
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Cache-Control", "no-store")
@@ -167,6 +245,28 @@ class _Handler(BaseHTTPRequestHandler):
             self.end_headers()
         elif self.path == "/reading" and self.client_address[0] == "127.0.0.1":
             _reading_until = time.time() + READING_HOLD_S  # the user is scrolling the reply: stay up
+            self.send_response(204)
+            self.end_headers()
+        elif self.path in ("/ask", "/settings"):
+            # Only Jarvis's own page and processes: right address, right host name, and the secret token.
+            # (A custom header also means a web page can't send this without the browser blocking it.)
+            host = (self.headers.get("Host") or "").split(":")[0]
+            if (self.client_address[0] != "127.0.0.1" or host not in ("127.0.0.1", "localhost")
+                    or not _token or self.headers.get("X-Jarvis-Token") != _token):
+                self.send_error(403)
+                return
+            n = min(int(self.headers.get("Content-Length", 0)), 4000)
+            try:
+                data = json.loads(self.rfile.read(n).decode("utf-8", "replace") or "{}")
+            except ValueError:
+                self.send_error(400)
+                return
+            if self.path == "/ask":
+                text = str(data.get("text", "")).strip()[:2000]
+                if text:
+                    _typed.put(text)
+            else:
+                set_input(data.get("input"), data.get("read_aloud"))
             self.send_response(204)
             self.end_headers()
         else:
@@ -289,7 +389,7 @@ def hide() -> None:
         time.sleep(HIDE_DELAY_S)
         while time.time() < _reading_until and _state.get("mode") == "idle":
             time.sleep(0.5)  # still reading a long reply
-        if _state.get("mode") == "idle":
+        if _state.get("mode") == "idle" and _state.get("input") != "text":  # text mode: you type here, stay up
             _want_visible = False
             _apply_visibility()
 
@@ -322,14 +422,21 @@ def _open_window():
         hwnd = _ensure_window()
         if hwnd:
             _place(hwnd)
-    _want_visible = not AUTOHIDE or _state.get("mode") != "idle"
+    _want_visible = not AUTOHIDE or _state.get("mode") != "idle" or _state.get("input") == "text"
     _apply_visibility()
 
 
 def start(brain_name: str = "") -> None:
-    global _server
+    global _server, _token
     if os.getenv("HUD", "on").lower() in ("off", "0", "false", "no"):
         return
+    import secrets
+
+    _token = secrets.token_urlsafe(24)
+    try:
+        TOKEN_FILE.write_text(_token, encoding="utf-8")
+    except OSError:
+        pass
     try:
         _server = ThreadingHTTPServer(("127.0.0.1", PORT), _Handler)
     except OSError as e:

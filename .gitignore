@@ -14,6 +14,8 @@ routine_windows.json
 close_history.json
 update_state.json
 update_announced.txt
+ui_settings.json
+.hud_token
 # logs, caches, generated files
 jarvis.log
 update.log
