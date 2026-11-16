@@ -285,8 +285,8 @@ class _Handler(BaseHTTPRequestHandler):
                 self.send_error(400)
                 return
             if self.path == "/coder/approve":  # from coder_hook.py: blocks until the user answers
-                allowed, note = (approval_handler(str(data.get("text", ""))[:400]) if approval_handler
-                                 else (False, "Jarvis isn't set up to ask"))
+                allowed, note = (approval_handler(str(data.get("text", ""))[:400], str(data.get("say", ""))[:300])
+                                 if approval_handler else (False, "Jarvis isn't set up to ask"))
                 body = json.dumps({"allow": bool(allowed), "note": note}).encode()
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")

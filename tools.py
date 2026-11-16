@@ -295,6 +295,18 @@ def stop_coding() -> str:
     return coder.stop_coding()
 
 
+def show_claude_code() -> str:
+    import coder
+
+    return coder.show_live() if coder.active() else "Code mode isn't on, so there's nothing running to show."
+
+
+def open_claude_terminal(project: str) -> str:
+    import coder
+
+    return coder.open_claude_terminal(project)
+
+
 # --------------------------------------------------------------- registry --
 def _s(props: dict, required: list[str]) -> dict:
     return {"type": "object", "properties": props, "required": required, "additionalProperties": False}
@@ -335,6 +347,9 @@ TOOLS = [
      "project. project: the project's name as the user said it, or a folder path.",
      _s({"project": {"type": "string"}}, ["project"])),
     (stop_coding, "Turn code mode off.", _s({}, [])),
+    (show_claude_code, "In code mode: open the live view window showing what Claude Code is doing.", _s({}, [])),
+    (open_claude_terminal, "Open an interactive Claude Code session in a terminal, in a project folder, for the "
+     "user to type in themselves (not code mode).", _s({"project": {"type": "string"}}, ["project"])),
     # Routines the user builds by talking
     (create_routine, "Create (or replace) a routine: a name the user says to open several apps at once, "
      "e.g. name 'homework', apps ['Google Docs', 'Spotify']. Confirm the app list with the user first.",

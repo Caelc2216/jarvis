@@ -618,27 +618,32 @@ def _yes_no(text: str) -> bool | None:
     return True if YES.search(text) else None
 
 
-def ask_permission(question: str) -> tuple[bool, str]:
+def ask_permission(question: str, say: str = "") -> tuple[bool, str]:
     """Claude Code wants to do something risky: ask the user (buttons on the display, and out loud
-    in voice mode). No answer within 5 minutes means no."""
+    in voice mode). Anything other than yes/no is passed back to Claude Code as the user's
+    instructions (e.g. "make it a file instead"). No answer within 5 minutes means no."""
     answered, ev = {}, threading.Event()
 
-    def done(allowed: bool) -> None:
-        answered.setdefault("allow", allowed)
+    def done(allowed: bool, note: str = "") -> None:
+        if "allow" not in answered:
+            answered.update(allow=allowed, note=note)
         ev.set()
 
     aid = hud.show_approval(question, done)
     remote_discord.notify(f"Claude Code wants to {question}. Answer on the Jarvis display.")
     try:
         if hud.input_mode() == "voice" and _voice_listen:
-            speak(f"Claude Code wants to {question}. Should I allow it?")
+            speak(f"Claude Code wants to {say or question}. Should I allow it?")
             for _ in range(2):
                 if ev.is_set():
                     break
-                said = _voice_listen()
-                verdict = _yes_no(said or "")
+                said = (_voice_listen() or "").strip()
+                verdict = _yes_no(said)
                 if verdict is not None:
                     done(verdict)
+                elif len(said.split()) >= 3:  # a change of plan: tell Claude Code instead of running it
+                    done(False, f"The user said: {said}")
+                    speak("Okay, I'll tell Claude Code.")
                 elif said:
                     speak("Sorry, yes or no?")
         else:  # text mode: a typed yes / no works as well as the buttons
@@ -649,19 +654,21 @@ def ask_permission(question: str) -> tuple[bool, str]:
                 if typed is None:
                     continue
                 verdict = _yes_no(typed)
-                if verdict is None:
-                    other.append(typed)
-                else:
+                if verdict is not None:
                     done(verdict)
+                elif len(typed.split()) >= 3:
+                    done(False, f"The user said: {typed}")
+                else:
+                    other.append(typed)
             for t in other:  # not an answer: keep it for after
                 hud._typed.put(t)
         ev.wait(timeout=300)
     finally:
         hud.clear_approval(aid)
     allowed = answered.get("allow", False)
-    hud.activity(("Allowed: " if allowed else "Not allowed: ") + question[:40])
+    hud.activity(("Allowed: " if allowed else "Not allowed: ") + (say or question)[:40])
     hud.state("thinking", "Back to work…" if allowed else "Finding another way…")
-    return allowed, "" if "allow" in answered else "no answer in time"
+    return allowed, answered.get("note", "") if "allow" in answered else "no answer in time"
 
 
 def _sync_coding_chip() -> None:
@@ -670,6 +677,7 @@ def _sync_coding_chip() -> None:
 
 def handle_code(text: str, say, listen) -> bool:
     """Code mode requests. Returns True if it handled the message."""
+    text = coder._heard(text)  # "cloud code" -> "Claude code"
     query = coder.match_start(text)
     if query is not None:
         folder, options = coder.find_project(query) if query else (None, [])
@@ -692,8 +700,10 @@ def handle_code(text: str, say, listen) -> bool:
         _sync_coding_chip()
     elif coder.UNDO_RE.match(plain):
         say(coder.undo())
-    elif coder.TERMINAL_RE.search(plain):
+    elif coder.TAKEOVER_RE.search(plain):
         say(coder.open_terminal())
+    elif coder.SHOW_RE.search(plain) and len(plain.split()) <= 16:
+        say(coder.show_live())
     else:
         hud.set_info(coding_busy=True)
         hud.state("thinking", "Working on it in Claude Code…")

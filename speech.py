@@ -24,7 +24,7 @@ def tidy(text: str) -> str:
     lines = []
     for line in text.splitlines():
         line = re.sub(r"^\s*(?:[-*•]+|\d+[.)])\s+", "", line)            # bullets and numbered lists
-        line = re.sub(r"[*#`_>|]", "", line).strip()
+        line = re.sub(r"[*#`>|]|(?<!\w)_+|_+(?!\w)", "", line).strip()  # keep snake_case names
         if not line or re.fullmatch(r"[-=—–\s]+", line):
             continue
         if line[-1] not in ".!?:;,":
@@ -35,9 +35,28 @@ def tidy(text: str) -> str:
     return re.sub(r"\s+", " ", text).replace(" ,", ",").replace(" .", ".").strip()
 
 
+_QUOTED_PATH = re.compile(r"""["'`]((?:[A-Za-z]:|~|\.{1,2})?[\\/][^"'`\n]*)["'`]""")
+# Folders in the middle of a path may contain spaces ("Jarvis MD\"); the last part may not.
+_WIN_PATH = re.compile(r"""(?<![\w/])(?:[A-Za-z]:|~)[\\/](?:[^\\/\n"'`<>|]+[\\/])*[^\s\\/"'`<>|,;()]*""")
+_REL_PATH = re.compile(r"""(?<![\w:/\\])(?:(?:[\w.-]+[\\/])+[\w-]+\.[A-Za-z0-9]{1,5}\b|(?:[\w.-]+[\\/]){2,}[\w.-]*)""")
+
+
+def _name(path: str) -> str:
+    """The part of a path worth hearing: 'C:\\Users\\me\\...\\Jarvis MD' -> 'Jarvis MD'."""
+    parts = [p for p in re.split(r"[\\/]+", path.strip().rstrip(".")) if p and not p.endswith(":")]
+    return parts[-1] if parts else path
+
+
+def short_paths(text: str) -> str:
+    """Say file and folder names, not whole paths (the display keeps the full ones)."""
+    text = _QUOTED_PATH.sub(lambda m: _name(m.group(1)), text)
+    text = _WIN_PATH.sub(lambda m: _name(m.group(0)), text)
+    return _REL_PATH.sub(lambda m: _name(m.group(0)), text)
+
+
 def spoken(text: str, display_on: bool = True, limit: int = SPEAK_MAX_CHARS) -> tuple[str, float]:
     """(what to say, the fraction of the tidied answer that gets said)."""
-    full = tidy(text)
+    full = short_paths(tidy(text))
     if len(full) <= limit:
         return full, 1.0
     cut = max(full.rfind(". ", 0, limit), full.rfind("! ", 0, limit), full.rfind("? ", 0, limit))

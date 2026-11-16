@@ -32,16 +32,19 @@ SAFE = re.compile(
 DANGER = re.compile(r"[;&|<>`]|\$\(", re.I)
 
 
-def decide(data: dict) -> tuple[str, str] | None:
-    """('allow'|'ask', reason) or None to leave it to Claude Code's normal rules."""
+def decide(data: dict) -> tuple[str, str, str] | None:
+    """('allow'|'ask', what it wants (shown in full), the short spoken version) or None to leave it
+    to Claude Code's normal rules."""
     tool, inp = data.get("tool_name", ""), data.get("tool_input") or {}
     project = Path(os.getenv("JARVIS_CODER_PROJECT") or data.get("cwd") or ".").resolve()
     if tool in ("Bash", "PowerShell"):
         cmd = (inp.get("command") or "").strip()
         if cmd and SAFE.match(cmd) and not DANGER.search(cmd):
-            return "allow", "safe command"
-        what = inp.get("description") or ""
-        return "ask", f"run the command {cmd[:160]}" + (f" ({what})" if what else "")
+            return "allow", "safe command", ""
+        what = (inp.get("description") or "").strip().rstrip(".")
+        full = f"run the command {cmd[:300]}" + (f" ({what})" if what else "")
+        say = f"run a command to {what[0].lower() + what[1:]}" if what else f"run the command {cmd[:120]}"
+        return "ask", full, say
     if tool in ("Edit", "Write", "MultiEdit", "NotebookEdit"):
         target = inp.get("file_path") or inp.get("notebook_path") or ""
         try:
@@ -50,15 +53,16 @@ def decide(data: dict) -> tuple[str, str] | None:
             inside = False
         if inside:
             return None  # inside the project: edits are allowed
-        return "ask", f"change a file outside the project: {target}"
+        return "ask", f"change a file outside the project: {target}", \
+            f"change {Path(target).name}, which is outside the project"
     return None
 
 
-def ask_jarvis(question: str) -> tuple[bool, str]:
+def ask_jarvis(question: str, say: str = "") -> tuple[bool, str]:
     try:
         token = (HERE / ".hud_token").read_text(encoding="utf-8").strip()
         req = urllib.request.Request(f"http://127.0.0.1:{PORT}/coder/approve", method="POST",
-                                     data=json.dumps({"text": question}).encode(),
+                                     data=json.dumps({"text": question, "say": say or question}).encode(),
                                      headers={"Content-Type": "application/json", "X-Jarvis-Token": token})
         with urllib.request.urlopen(req, timeout=320) as r:
             answer = json.load(r)
@@ -72,12 +76,17 @@ def main() -> None:
     verdict = decide(data)
     if not verdict:
         return
-    kind, reason = verdict
+    kind, reason, say = verdict
     if kind == "ask":
-        allowed, note = ask_jarvis(reason)
+        allowed, note = ask_jarvis(reason, say)
         kind = "allow" if allowed else "deny"
-        reason = "The user allowed it." if allowed else ("The user said no" + (f": {note}" if note else "") +
-                                                         ". Don't retry it; find another way or explain what's needed.")
+        if allowed:
+            reason = "The user allowed it."
+        elif note.startswith("The user said:"):  # they answered with a change of plan, not just "no"
+            reason = (f"Not run. {note} Follow that instead.")
+        else:
+            reason = ("The user said no" + (f" ({note})" if note else "") +
+                      ". Don't retry it; find another way or explain what's needed.")
     print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": kind,
                                              "permissionDecisionReason": reason}}))
 

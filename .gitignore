@@ -31,3 +31,4 @@ jarvis.ico
 models/*.tflite
 models/silero_vad.onnx
 metrics.jsonl
+coder_live.log

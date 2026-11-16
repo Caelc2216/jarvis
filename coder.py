@@ -103,12 +103,24 @@ STOP_RE = re.compile(r"^(?:ok(?:ay)?[, ]*)?(?:stop|exit|leave|end|quit|done|fini
                      r"(?:\s+for now)?[.!]*$", re.I)
 UNDO_RE = re.compile(r"^(?:please\s+)?(?:undo|revert|roll back|rollback)\b(?:\s+(?:that|it|this|the last "
                      r"(?:change|changes|one|edit)|your changes|what you (?:just )?did))?[.!]*$", re.I)
-TERMINAL_RE = re.compile(r"\b(?:open|show|continue|move)\b.*\b(?:in|to)\s+(?:the|a)\s+terminal\b", re.I)
+# "let me type in it myself": the same Claude Code conversation, in a terminal you can type in.
+TAKEOVER_RE = re.compile(r"\b(?:take over|let me (?:type|take over|drive|use it)|type (?:in|into) it|(?:continue|"
+                         r"carry on|finish) (?:it )?(?:myself|on my own)|interactive)\b", re.I)
+# "show me what it's doing": the live view of what Claude Code is doing.
+SHOW_RE = re.compile(r"\b(?:see|show|display|watch|view|pull up|bring up|open|look at)\b.*"
+                     r"\b(?:terminal|cli|console|command line|live view|claude code window|progress|"
+                     r"what (?:it'?s|you'?re|claude(?: code)?(?:'s| is)) doing)\b", re.I)
+TERMINAL_RE = SHOW_RE  # older name
+
+
+def _heard(text: str) -> str:
+    """Speech-to-text often hears "Claude" as "cloud" / "clawed"."""
+    return re.sub(r"\b(?:cloud|clawed|clod|claud)(?=\s+code\b)", "Claude", text or "", flags=re.I)
 
 
 def match_start(text: str) -> str | None:
     """'let's code on my algorithms project' -> 'algorithms'. '' means "code mode, but which project?"."""
-    text = (text or "").strip()
+    text = _heard(text).strip()
     m = START_RE.match(text) or CLAUDE_RE.match(text)
     if not m:
         return None
@@ -139,10 +151,15 @@ def start(folder: str) -> str:
     state.update(project=folder, session_id=prev.get("id"), snapshots=state.get("snapshots", {}))
     _save(state)
     _open_vscode(folder)
+    _live(f"\n=== Code mode: {folder} ===")
+    shown = ""
+    if os.getenv("CODER_LIVE_WINDOW", "on").lower() not in ("off", "0", "false", "no"):
+        show_live()
+        shown = " The live view shows what Claude Code is doing."
     _activity(f"Code mode · {project_name(folder)}")
     again = " We'll pick up where we left off." if prev else ""
-    return (f"Code mode on for {project_name(folder)}, open in VS Code.{again} Tell me what you'd like built or "
-            "fixed. Say undo that to reverse a change, or stop coding when you're done.")
+    return (f"Code mode on for {project_name(folder)}, open in VS Code.{again}{shown} Tell me what you'd like "
+            "built or fixed. Say undo that to reverse a change, or stop coding when you're done.")
 
 
 def stop() -> str:
@@ -164,20 +181,83 @@ def _open_vscode(folder: str) -> None:
         print(f"  (couldn't open VS Code: {e})")
 
 
+LIVE = HERE / "coder_live.log"
+LIVE_TITLE = "Claude Code - live (Jarvis)"
+
+
+def _live(text: str) -> None:
+    """Add to the live view (a terminal window that follows this file)."""
+    try:
+        if LIVE.exists() and LIVE.stat().st_size > 2_000_000:
+            LIVE.write_text(LIVE.read_text(encoding="utf-8", errors="replace")[-200_000:], encoding="utf-8")
+        with open(LIVE, "a", encoding="utf-8") as f:
+            f.write(text.rstrip("\n") + "\n")
+    except OSError:
+        pass
+
+
+def _bring_up(title: str) -> bool:
+    """Bring an already-open window with this title to the front."""
+    try:
+        import winlayout as wl
+
+        for hwnd in wl.windows(title_has=title):
+            wl.user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+            wl.user32.SetForegroundWindow(hwnd)
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def show_live() -> str:
+    """Open (or bring up) the live view: a terminal that shows what Claude Code is doing as it happens."""
+    if _bring_up(LIVE_TITLE):
+        return "Here's the live view of what Claude Code is doing."
+    LIVE.touch(exist_ok=True)
+    follow = (f"Get-Content -LiteralPath '{LIVE}' -Wait -Tail 80 -Encoding UTF8")  # no ';' (wt would split it)
+    wt = shutil.which("wt")
+    if wt:
+        subprocess.Popen([wt, "-w", "new", "--title", LIVE_TITLE, "--suppressApplicationTitle",
+                          "powershell", "-NoExit", "-NoProfile", "-Command", follow], creationflags=NO_WINDOW)
+    else:
+        subprocess.Popen(["powershell", "-NoExit", "-NoProfile", "-Command",
+                          f"$host.UI.RawUI.WindowTitle = '{LIVE_TITLE}'; {follow}"], creationflags=0x00000010)
+    return "Opened the live view of what Claude Code is doing."
+
+
 def open_terminal() -> str:
+    """Take over: the same Claude Code conversation in a terminal you can type in."""
     folder, sid = active(), _load().get("session_id")
     if not folder:
         return "Code mode isn't on."
+    if busy():
+        return "Claude Code is still working on your last request. Try again when it's finished."
     claude = shutil.which("claude") or "claude"
     args = [claude] + (["--resume", sid] if sid else [])
     wt = shutil.which("wt")
     if wt:
-        subprocess.Popen([wt, "-d", folder, *args], creationflags=NO_WINDOW)
+        subprocess.Popen([wt, "-w", "new", "--title", f"Claude Code - {project_name(folder)}", "-d", folder, *args],
+                         creationflags=NO_WINDOW)
     else:
-        subprocess.Popen(["cmd", "/c", "start", "Claude Code", "cmd", "/k", subprocess.list2cmdline(args)],
-                         cwd=folder, creationflags=NO_WINDOW)
-    return ("Opened Claude Code in a terminal" + (", continuing this conversation." if sid else ".")
-            + " Type there whenever you like.")
+        subprocess.Popen(["cmd", "/k", subprocess.list2cmdline(args)], cwd=folder, creationflags=0x00000010)
+    return ("Opened Claude Code in a terminal" + (", with our conversation so far." if sid else ".")
+            + " Type there yourself. If you ask me for more, finish there first so you don't both edit at once.")
+
+
+def open_claude_terminal(project: str) -> str:
+    """Tool: a plain interactive Claude Code session in a project folder (no code mode)."""
+    folder, options = find_project(project or "")
+    if not folder:
+        return ("Several projects match: " + "; ".join(options) + ". Ask which.") if options else \
+            "I couldn't find that project. Ask the user for the folder's name."
+    claude = shutil.which("claude") or "claude"
+    wt = shutil.which("wt")
+    if wt:
+        subprocess.Popen([wt, "-w", "new", "-d", folder, claude], creationflags=NO_WINDOW)
+    else:
+        subprocess.Popen(["cmd", "/k", claude], cwd=folder, creationflags=0x00000010)
+    return f"Opened Claude Code in a terminal in {project_name(folder)}."
 
 
 # ---------------------------------------------------------------- snapshots --
@@ -276,6 +356,34 @@ def _describe(name: str, inp: dict) -> str | None:
     return None
 
 
+def _live_line(name: str, inp: dict, folder: str) -> str:
+    """One line for the live view."""
+    def rel(p):
+        try:
+            return str(Path(p).resolve().relative_to(folder))
+        except (ValueError, OSError):
+            return str(p)
+
+    path = inp.get("file_path") or inp.get("notebook_path") or inp.get("path") or ""
+    if name in ("Bash", "PowerShell"):
+        return f"  $ {inp.get('command', '')}" + (f"    # {inp['description']}" if inp.get("description") else "")
+    if name in ("Edit", "MultiEdit"):
+        return f"  ~ Editing {rel(path)}"
+    if name == "Write":
+        return f"  + Writing {rel(path)}"
+    if name == "Read":
+        return f"  . Reading {rel(path)}"
+    if name in ("Glob", "Grep"):
+        return f"  ? Searching: {inp.get('pattern', '')}"
+    if name == "TodoWrite":
+        todos = inp.get("todos") or []
+        return "  Plan:\n" + "\n".join(f"    [{'x' if t.get('status') == 'completed' else ' '}] {t.get('content', '')}"
+                                       for t in todos)
+    if name in ("WebSearch", "WebFetch"):
+        return f"  @ {name}: {inp.get('query') or inp.get('url', '')}"
+    return f"  * {name}"
+
+
 def _hook_settings() -> str:
     py = sys.executable
     if Path(py).stem.lower() == "pythonw":  # hooks talk over stdin/stdout: needs the console python
@@ -314,6 +422,8 @@ def ask(task: str, on_progress=None) -> str:
     env["JARVIS_CODER_PROJECT"] = folder
 
     t0, result, error, turns = time.time(), "", "", 0
+    _live(f"\n[{time.strftime('%H:%M:%S')}] You: {task}")
+    bash_ids = set()
     with _lock:
         _cancelled = False
         _proc = subprocess.Popen(cmd, cwd=folder, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
@@ -336,11 +446,32 @@ def ask(task: str, on_progress=None) -> str:
             elif kind == "assistant":
                 for c in e.get("message", {}).get("content", []):
                     if c.get("type") == "tool_use":
-                        line_ = _describe(c.get("name", ""), c.get("input") or {})
+                        name, inp = c.get("name", ""), c.get("input") or {}
+                        if name != "ToolSearch":  # Claude Code housekeeping, not worth showing
+                            _live(_live_line(name, inp, folder))
+                        if name in ("Bash", "PowerShell"):
+                            bash_ids.add(c.get("id"))
+                        line_ = _describe(name, inp)
                         if line_:
                             _activity(line_[:60])
                             if on_progress:
                                 on_progress(line_)
+                    elif c.get("type") == "text" and c.get("text", "").strip():
+                        _live("  Claude: " + c["text"].strip().replace("\n", "\n          "))
+            elif kind == "user":  # tool results: show command output and refusals
+                for c in e.get("message", {}).get("content", []) or []:
+                    if not isinstance(c, dict) or c.get("type") != "tool_result":
+                        continue
+                    body = c.get("content")
+                    if isinstance(body, list):
+                        body = "\n".join(b.get("text", "") for b in body if isinstance(b, dict))
+                    body = str(body or "").strip()
+                    if c.get("is_error"):
+                        _live("    ! " + body[:300].replace("\n", "\n      "))
+                    elif c.get("tool_use_id") in bash_ids and body:
+                        lines = body.splitlines()
+                        shown = lines[:15] + ([f"... ({len(lines) - 15} more lines)"] if len(lines) > 15 else [])
+                        _live("\n".join("    | " + ln for ln in shown))
             elif kind == "result":
                 sid = e.get("session_id") or sid
                 turns = e.get("num_turns", 0)
@@ -355,6 +486,10 @@ def ask(task: str, on_progress=None) -> str:
         with _lock:
             _proc = None
 
+    took = time.time() - t0
+    _live(f"[{time.strftime('%H:%M:%S')}] " + ("Stopped." if _cancelled else
+                                               f"Problem: {error[:200]}" if error and not result else
+                                               f"Done in {took:.0f} s.") + "\n")
     after = snapshot(folder, f"after: {task}")
     state = _load()
     state["session_id"] = sid
