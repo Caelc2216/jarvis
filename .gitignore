@@ -16,6 +16,8 @@ update_state.json
 update_announced.txt
 ui_settings.json
 .hud_token
+coder_state.json
+coder_snapshots/
 # logs, caches, generated files
 jarvis.log
 update.log

@@ -55,6 +55,13 @@ SPEED AND LAPTOPS
   On a laptop or slower PC: run setup.bat and pick Claude or ChatGPT as the brain (the free
   local brain runs ON your PC and is heavy), and add  PERFORMANCE=lite  to .env.
 
+CODING WITH CLAUDE CODE (needs Claude Code installed and signed in)
+  Say "let's code on <project name>". Jarvis opens it in VS Code and passes what you ask to
+  Claude Code, which edits the project. Progress shows on the display; you hear a short summary.
+  Before it runs anything risky (installing, deleting, scripts) Jarvis asks you first: answer
+  yes/no, or click Allow / Don't allow. Say "undo that" to put the files back, "open it in the
+  terminal" to keep going there yourself, and "stop coding" when you're done.
+
 IF SOMETHING'S WRONG
   Look at jarvis.log in this folder - it says what Jarvis heard and did.
   Your settings are in .env. Keep that file private; it can hold your keys.

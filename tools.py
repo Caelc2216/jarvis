@@ -283,6 +283,18 @@ def set_input_mode(mode: str, read_aloud: bool | None = None) -> str:
     return hud.set_input(mode, read_aloud)
 
 
+def start_coding(project: str) -> str:
+    import coder
+
+    return coder.start_coding(project)
+
+
+def stop_coding() -> str:
+    import coder
+
+    return coder.stop_coding()
+
+
 # --------------------------------------------------------------- registry --
 def _s(props: dict, required: list[str]) -> dict:
     return {"type": "object", "properties": props, "required": required, "additionalProperties": False}
@@ -318,6 +330,11 @@ TOOLS = [
      _s({"mode": {"type": "string", "enum": ["voice", "text"]},
          "read_aloud": {"type": "boolean", "description": "Text mode only; leave out to keep the current choice"}},
         ["mode"])),
+    (start_coding, "Turn on code mode: from now on the user's requests go to Claude Code, which edits code in "
+     "that project folder (it opens in VS Code). Use when the user wants help coding on / programming a "
+     "project. project: the project's name as the user said it, or a folder path.",
+     _s({"project": {"type": "string"}}, ["project"])),
+    (stop_coding, "Turn code mode off.", _s({}, [])),
     # Routines the user builds by talking
     (create_routine, "Create (or replace) a routine: a name the user says to open several apps at once, "
      "e.g. name 'homework', apps ['Google Docs', 'Spotify']. Confirm the app list with the user first.",

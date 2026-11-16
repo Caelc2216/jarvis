@@ -32,7 +32,7 @@ BROWSER_EXE = os.path.basename(BROWSER).lower()
 
 _state = {"mode": "idle", "caption": "Say “Hey Jarvis”.", "you": "", "jarvis": "",
           "brain": "", "routine": "", "activity": [], "playing": None, "level": 0.0,
-          "input": "voice", "read_aloud": True}
+          "input": "voice", "read_aloud": True, "coding": "", "coding_busy": False, "approval": None}
 _lock = threading.Lock()
 _clients: list[queue.Queue] = []
 _server = None
@@ -144,6 +144,29 @@ def next_typed(timeout: float | None = None) -> str | None:
         return None
 
 
+# ------------------------------------------------- code mode: permission asks --
+approval_handler = None   # set by jarvis.py: fn(question) -> (allowed, note); asks out loud and/or by button
+stop_handler = None       # set by jarvis.py: stops the coding request in progress
+_pending: dict = {}       # approval id -> callback(allowed)
+
+
+def show_approval(question: str, callback) -> str:
+    """Put an Allow / Don't allow card on the display; callback(allowed) runs when one is clicked."""
+    import secrets
+
+    aid = secrets.token_hex(4)
+    _pending[aid] = callback
+    _update(approval={"id": aid, "text": question})
+    show()
+    return aid
+
+
+def clear_approval(aid: str) -> None:
+    _pending.pop(aid, None)
+    if (_state.get("approval") or {}).get("id") == aid:
+        _update(approval=None)
+
+
 def replied(text: str) -> None:
     """Show a reply without speaking it (text mode with read-aloud off)."""
     if _server is not None:
@@ -247,7 +270,7 @@ class _Handler(BaseHTTPRequestHandler):
             _reading_until = time.time() + READING_HOLD_S  # the user is scrolling the reply: stay up
             self.send_response(204)
             self.end_headers()
-        elif self.path in ("/ask", "/settings"):
+        elif self.path in ("/ask", "/settings", "/coder/approve", "/coder/answer", "/coder/stop"):
             # Only Jarvis's own page and processes: right address, right host name, and the secret token.
             # (A custom header also means a web page can't send this without the browser blocking it.)
             host = (self.headers.get("Host") or "").split(":")[0]
@@ -261,10 +284,26 @@ class _Handler(BaseHTTPRequestHandler):
             except ValueError:
                 self.send_error(400)
                 return
+            if self.path == "/coder/approve":  # from coder_hook.py: blocks until the user answers
+                allowed, note = (approval_handler(str(data.get("text", ""))[:400]) if approval_handler
+                                 else (False, "Jarvis isn't set up to ask"))
+                body = json.dumps({"allow": bool(allowed), "note": note}).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(body)
+                return
             if self.path == "/ask":
                 text = str(data.get("text", "")).strip()[:2000]
                 if text:
                     _typed.put(text)
+            elif self.path == "/coder/answer":
+                cb = _pending.pop(str(data.get("id", "")), None)
+                if cb:
+                    cb(bool(data.get("allow")))
+            elif self.path == "/coder/stop":
+                if stop_handler:
+                    stop_handler()
             else:
                 set_input(data.get("input"), data.get("read_aloud"))
             self.send_response(204)

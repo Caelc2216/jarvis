@@ -12,6 +12,7 @@ it cannot run commands or touch files beyond its own memory.json.
 import argparse
 import io
 import os
+import re
 import sys
 import threading
 import time
@@ -43,6 +44,7 @@ import remote_discord  # noqa: E402
 import mic_check  # noqa: E402
 import metrics  # noqa: E402
 import routines  # noqa: E402
+import coder  # noqa: E402
 import speech  # noqa: E402
 import tools  # noqa: E402  (needs .env loaded first)
 from brains import Router  # noqa: E402
@@ -510,6 +512,9 @@ def main() -> None:
 
     remote_discord.start(remote_ask, remote_status)
     threading.Thread(target=serve_typed, args=(brain,), daemon=True).start()  # text mode on the display
+    hud.approval_handler = ask_permission  # code mode: Claude Code asks before risky commands
+    hud.stop_handler = coder.cancel
+    _sync_coding_chip()
 
     def listen() -> str | None:
         """One thing the user says (None means they stayed quiet)."""
@@ -531,6 +536,8 @@ def main() -> None:
             hud.heard(heard)
         return heard
 
+    global _voice_listen
+    _voice_listen = listen
     if not args.text:
         try:
             ensure_microphone()
@@ -597,6 +604,109 @@ def record_reply(brain, heard: str, reply: str) -> None:
 BRAIN_LOCK = threading.Lock()  # voice and typed messages take turns with the same conversation
 
 
+# ----------------------------------------------------------------- code mode --
+_voice_listen = None  # main()'s listen(), for asking permission out loud
+YES = re.compile(r"\b(yes|yeah|yep|yup|sure|allow|allowed|go ahead|do it|okay|ok|fine|approve|please do)\b", re.I)
+NO = re.compile(r"^\s*(no|nope|nah)\b|\b(don'?t|do not|deny|denied|stop|cancel|never|not allowed|block)\b", re.I)
+
+
+def _yes_no(text: str) -> bool | None:
+    if not text:
+        return None
+    if NO.search(text):
+        return False
+    return True if YES.search(text) else None
+
+
+def ask_permission(question: str) -> tuple[bool, str]:
+    """Claude Code wants to do something risky: ask the user (buttons on the display, and out loud
+    in voice mode). No answer within 5 minutes means no."""
+    answered, ev = {}, threading.Event()
+
+    def done(allowed: bool) -> None:
+        answered.setdefault("allow", allowed)
+        ev.set()
+
+    aid = hud.show_approval(question, done)
+    remote_discord.notify(f"Claude Code wants to {question}. Answer on the Jarvis display.")
+    try:
+        if hud.input_mode() == "voice" and _voice_listen:
+            speak(f"Claude Code wants to {question}. Should I allow it?")
+            for _ in range(2):
+                if ev.is_set():
+                    break
+                said = _voice_listen()
+                verdict = _yes_no(said or "")
+                if verdict is not None:
+                    done(verdict)
+                elif said:
+                    speak("Sorry, yes or no?")
+        else:  # text mode: a typed yes / no works as well as the buttons
+            other = []
+            deadline = time.time() + 300
+            while not ev.is_set() and time.time() < deadline:
+                typed = hud.next_typed(timeout=0.5)
+                if typed is None:
+                    continue
+                verdict = _yes_no(typed)
+                if verdict is None:
+                    other.append(typed)
+                else:
+                    done(verdict)
+            for t in other:  # not an answer: keep it for after
+                hud._typed.put(t)
+        ev.wait(timeout=300)
+    finally:
+        hud.clear_approval(aid)
+    allowed = answered.get("allow", False)
+    hud.activity(("Allowed: " if allowed else "Not allowed: ") + question[:40])
+    hud.state("thinking", "Back to work…" if allowed else "Finding another way…")
+    return allowed, "" if "allow" in answered else "no answer in time"
+
+
+def _sync_coding_chip() -> None:
+    hud.set_info(coding=coder.project_name() if coder.active() else "")
+
+
+def handle_code(text: str, say, listen) -> bool:
+    """Code mode requests. Returns True if it handled the message."""
+    query = coder.match_start(text)
+    if query is not None:
+        folder, options = coder.find_project(query) if query else (None, [])
+        if not folder and query and not options:
+            return False  # e.g. "help me code in Python": not a project, let the brain answer
+        if not folder:
+            folder = routines.ask_for_project({"projects_folders": coder._roots(),
+                                               "ask": "Which project should we code on?"}, say, listen)
+            if not folder:
+                return True
+        say(coder.start(folder))
+        _sync_coding_chip()
+        return True
+    if not coder.active():
+        return False
+    _sync_coding_chip()
+    plain = text.strip()
+    if coder.STOP_RE.search(plain):
+        say(coder.stop())
+        _sync_coding_chip()
+    elif coder.UNDO_RE.match(plain):
+        say(coder.undo())
+    elif coder.TERMINAL_RE.search(plain):
+        say(coder.open_terminal())
+    else:
+        hud.set_info(coding_busy=True)
+        hud.state("thinking", "Working on it in Claude Code…")
+        t0 = time.time()
+        try:
+            reply = coder.ask(text, on_progress=lambda line: hud.state("thinking", line + "…"))
+        finally:
+            hud.set_info(coding_busy=False)
+        print(f"  (code request took {time.time() - t0:.0f} s)")
+        say(reply or "Done.")
+    return True
+
+
 def serve_typed(brain) -> None:
     """Text mode: answer messages typed on the display. Replies show on screen, and are also
     spoken if "Read replies aloud" is on."""
@@ -620,7 +730,9 @@ def serve_typed(brain) -> None:
         print(f"You (typed): {text}")
         hud.heard(text)
         try:
-            if name := routines.match_save(text):
+            if handle_code(text, say, next_message):
+                pass
+            elif name := routines.match_save(text):
                 routines.save_layout(name, say)
             elif name := routines.match(text):
                 routines.run(name, say, next_message)
@@ -673,6 +785,8 @@ def _conversation_factory(args, brain, listen):
                 speak("Goodbye.")
                 break
             try:
+                if handle_code(heard, speak, listen):
+                    continue
                 if name := routines.match_save(heard):
                     routines.save_layout(name, speak)
                 elif name := routines.match(heard):
