@@ -677,8 +677,9 @@ def _sync_coding_chip() -> None:
 
 def handle_code(text: str, say, listen) -> bool:
     """Code mode requests. Returns True if it handled the message."""
-    text = coder._heard(text)  # "cloud code" -> "Claude code"
-    query = coder.match_start(text)
+    text = coder._heard(text).strip()  # "cloud code" -> "Claude code"
+    who, plain = coder.addressed(text)  # "Jarvis, ..." / "Claude, ..."
+    query = coder.match_start(plain) if who != "claude" else None
     if query is not None:
         folder, options = coder.find_project(query) if query else (None, [])
         if not folder and query and not options:
@@ -694,27 +695,46 @@ def handle_code(text: str, say, listen) -> bool:
     if not coder.active():
         return False
     _sync_coding_chip()
-    plain = text.strip()
+    if who == "claude":
+        _code_request(plain, say)
+        return True
+    current = coder.active()
+    target, fresh = coder.switch_target(plain)
     if coder.STOP_RE.search(plain):
         say(coder.stop())
         _sync_coding_chip()
     elif coder.UNDO_RE.match(plain):
         say(coder.undo())
+    elif target and (Path(target) != Path(current) or fresh):
+        say(coder.start(target, fresh=fresh))  # switch projects (or start over in this one)
+        _sync_coding_chip()
     elif coder.TAKEOVER_RE.search(plain):
         say(coder.open_terminal())
-    elif coder.SHOW_RE.search(plain) and len(plain.split()) <= 16:
+    elif (coder.SHOW_RE.search(plain) or (target and re.search(r"\b(?:live|terminal|cli)\b", plain, re.I))) \
+            and len(plain.split()) <= 20:
         say(coder.show_live())
+    elif target:
+        say(f"We're already working on {coder.project_name()}. What would you like done?")
+    elif who == "jarvis" or coder.for_jarvis(plain):
+        print("  (code mode: this one's for Jarvis)")
+        hud.activity("For Jarvis, not Claude Code")
+        return False  # the normal Jarvis handles it; code mode stays on
     else:
-        hud.set_info(coding_busy=True)
-        hud.state("thinking", "Working on it in Claude Code…")
-        t0 = time.time()
-        try:
-            reply = coder.ask(text, on_progress=lambda line: hud.state("thinking", line + "…"))
-        finally:
-            hud.set_info(coding_busy=False)
-        print(f"  (code request took {time.time() - t0:.0f} s)")
-        say(reply or "Done.")
+        _code_request(plain, say)
     return True
+
+
+def _code_request(text: str, say) -> None:
+    hud.activity("To Claude Code")
+    hud.set_info(coding_busy=True)
+    hud.state("thinking", "Working on it in Claude Code…")
+    t0 = time.time()
+    try:
+        reply = coder.ask(text, on_progress=lambda line: hud.state("thinking", line + "…"))
+    finally:
+        hud.set_info(coding_busy=False)
+    print(f"  (code request took {time.time() - t0:.0f} s)")
+    say(reply or "Done.")
 
 
 def serve_typed(brain) -> None:

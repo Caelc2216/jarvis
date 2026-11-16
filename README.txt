@@ -59,8 +59,11 @@ CODING WITH CLAUDE CODE (needs Claude Code installed and signed in)
   Say "let's code on <project name>". Jarvis opens it in VS Code and passes what you ask to
   Claude Code, which edits the project. Progress shows on the display; you hear a short summary.
   Before it runs anything risky (installing, deleting, scripts) Jarvis asks you first: answer
-  yes/no, or click Allow / Don't allow. Say "undo that" to put the files back, "open it in the
-  terminal" to keep going there yourself, and "stop coding" when you're done.
+  yes/no, or click Allow / Don't allow. Say "undo that" to put the files back, "show me what
+  Claude is doing" for the live view, "let me type in it myself" to take over in a terminal,
+  "switch to my <other> project" to change projects, and "stop coding" when you're done.
+  While coding, music, timers, weather, opening apps etc. still go to Jarvis. To be sure who
+  gets it, start with "Jarvis, ..." or "Claude, ...".
 
 IF SOMETHING'S WRONG
   Look at jarvis.log in this folder - it says what Jarvis heard and did.

@@ -101,8 +101,94 @@ CLAUDE_RE = re.compile(r"^(?:open|start|use)\s+(?:claude code|claude)\s+(?:on|in
 STOP_RE = re.compile(r"^(?:ok(?:ay)?[, ]*)?(?:stop|exit|leave|end|quit|done|finish(?:ed)?)\s+(?:with\s+)?"
                      r"(?:the\s+)?(?:coding|code mode|code)\b|^(?:i'?m\s+)?done coding\b|^(?:that'?s all|we'?re done)"
                      r"(?:\s+for now)?[.!]*$", re.I)
-UNDO_RE = re.compile(r"^(?:please\s+)?(?:undo|revert|roll back|rollback)\b(?:\s+(?:that|it|this|the last "
-                     r"(?:change|changes|one|edit)|your changes|what you (?:just )?did))?[.!]*$", re.I)
+UNDO_RE = re.compile(r"^(?:(?:okay|ok|please|(?:can|could|would) you|go ahead and|just)[,\s]+)*"
+                     r"(?:undo|revert|roll back|rollback)\b(?:\s+(?:that|it|this|(?:the|that|your)\s+last\s+(?:change|"
+                     r"changes|one|edit|request)|(?:that|those|the|your)\s+changes?|what you (?:just )?did))?"
+                     r"(?:\s+please)?[.!?]*$", re.I)
+
+# ------------------------------------------- who is this for: Jarvis or Claude Code? --
+# In code mode most things go to Claude Code. These go to Jarvis instead:
+#   - anything that starts with "Jarvis" ("okay Jarvis, play some music")
+#   - switching / stopping projects, undo, the live view (handled by code mode itself)
+#   - Jarvis's everyday jobs: music, timers, weather, time, lights, opening/closing apps...
+# and anything starting with "Claude" always goes to Claude Code.
+ADDRESS_JARVIS = re.compile(r"^\s*(?:(?:hey|okay|ok|hi|yo|so|um|uh)[,\s]+)?jarvis\b[\s,.:;!?-]*", re.I)
+ADDRESS_CLAUDE = re.compile(r"^\s*(?:(?:hey|okay|ok)[,\s]+)?(?:(?:tell|ask)\s+)?claude(?:\s+code)?\b(?:\s+to\b)?"
+                            r"[\s,.:;!?-]*", re.I)
+JARVIS_TOPICS = re.compile(
+    r"^(?:(?:can|could|would) you\s+|please\s+)?(?:play|pause|resume|unpause|skip|shuffle)\b"
+    r"|^(?:(?:can|could|would) you\s+|please\s+)?(?:play|put on)\b.*\b(?:music|song|songs|album|playlist|track|by)\b"
+    r"|\bnext (?:song|track)\b"
+    r"|\b(?:what'?s|what is) (?:playing|this song)\b|\bvolume\b|\b(?:mute|unmute)\b"
+    r"|\b(?:set|start|cancel)\s+(?:a\s+|the\s+|my\s+)?timer\b|\btimer for\b|\bremind me\b|\balarm\b"
+    r"|\bweather\b|\bforecast\b|\bwhat(?:'s| is)? the time\b|\bwhat time is it\b|\bwhat(?:'s| is) (?:the )?date\b"
+    r"|\b(?:turn|switch) (?:on|off) (?:the |my )?lights?\b|\blights? (?:on|off)\b|\bdim the lights\b"
+    r"|\b(?:text|voice) mode\b|\bcheck for (?:an )?updates?\b|\bupdate yourself\b|\bhow are you performing\b"
+    r"|\bwhat windows\b|\btake a screenshot\b", re.I)
+APP_ACTION = re.compile(r"^(?:(?:can|could|would) you\s+|please\s+)?(open|launch|start|close|quit|minimi[sz]e|"
+                        r"maximi[sz]e|focus|switch to)\s+(?:up\s+)?(?:the\s+|my\s+)?(.+?)(?:\s+(?:app|window|for me))?"
+                        r"[.!?]*$", re.I)
+PROJECT_WORD = re.compile(r"\b(?:folder|project|directory|repo|repository|codebase)\b", re.I)
+PREPOSITION = re.compile(r"\b(?:in|on|to|for|with|into)\s+(?:my\s+|the\s+|a\s+|our\s+)?", re.I)
+
+
+def _project_phrase(text: str) -> str | None:
+    """'...terminal in the algorithms homework folder' -> 'algorithms homework' (the words between the
+    last in/on/to/for before 'folder|project' and that word)."""
+    m = PROJECT_WORD.search(text)
+    if not m:
+        return None
+    before = text[:m.start()]
+    preps = list(PREPOSITION.finditer(before))
+    if not preps:
+        return None
+    name = before[preps[-1].end():].strip(" ,.")
+    return name or None
+SWITCH_VERB = re.compile(r"\b(?:switch|change|jump|go (?:over )?to|new session|fresh session|start|open|continue|"
+                         r"work(?:ing)? on|code|coding|session)\b", re.I)
+
+
+def addressed(text: str) -> tuple[str | None, str]:
+    """('jarvis' | 'claude' | None, the text without the name)."""
+    m = ADDRESS_JARVIS.match(text)
+    if m and text[m.end():].strip():
+        return "jarvis", text[m.end():].strip()
+    m = ADDRESS_CLAUDE.match(text)
+    if m and text[m.end():].strip():
+        return "claude", text[m.end():].strip()
+    return None, text
+
+
+def for_jarvis(text: str) -> bool:
+    """Is this one of Jarvis's everyday jobs rather than a coding request?"""
+    if JARVIS_TOPICS.search(text):
+        return True
+    m = APP_ACTION.match(text.strip())
+    if m:
+        name = m.group(2).strip()
+        if re.search(r"\.\w{1,5}$|\b(?:file|function|class|method|test|tests|module|component|page|readme|"
+                     r"terminal|folder|directory|branch|pr|pull request|issue)\b", name, re.I):
+            return False  # "open the readme", "close the file": that's coding
+        try:
+            import apps
+
+            app, _ = apps.find(name)
+            return app is not None
+        except Exception:
+            return False
+    return False
+
+
+def switch_target(text: str) -> tuple[str | None, bool]:
+    """'switch gears to a new Claude code session in my Jarvis folder' -> (that folder, new session?)."""
+    name = _project_phrase(text)
+    if not name or not SWITCH_VERB.search(text):
+        return None, False
+    folder, _ = find_project(name)
+    current = active()
+    if folder and current and Path(folder) != Path(current) and Path(folder).is_relative_to(current):
+        return None, False  # a folder inside this project: that's a coding request, not a switch
+    return folder, bool(re.search(r"\b(?:new|fresh)\b", text, re.I))
 # "let me type in it myself": the same Claude Code conversation, in a terminal you can type in.
 TAKEOVER_RE = re.compile(r"\b(?:take over|let me (?:type|take over|drive|use it)|type (?:in|into) it|(?:continue|"
                          r"carry on|finish) (?:it )?(?:myself|on my own)|interactive)\b", re.I)
@@ -139,13 +225,14 @@ def find_project(query: str) -> tuple[str | None, list[str]]:
     return None, [str(f) for _, f in ranked[:3]]
 
 
-def start(folder: str) -> str:
-    """Turn code mode on for this folder and open it in VS Code."""
+def start(folder: str, fresh: bool = False) -> str:
+    """Turn code mode on for this folder and open it in VS Code. fresh: start a new Claude Code
+    conversation instead of continuing the last one there."""
     folder = str(Path(folder).resolve())
     state = _load()
     sessions = state.get("sessions", {})
     # Pick up where you left off in this project if it was recent (within 12 hours).
-    prev = sessions.get(folder, {})
+    prev = {} if fresh else sessions.get(folder, {})
     if time.time() - prev.get("t", 0) > 12 * 3600:
         prev = {}
     state.update(project=folder, session_id=prev.get("id"), snapshots=state.get("snapshots", {}))
@@ -531,11 +618,11 @@ def cancel() -> None:
 
 
 # ------------------------------------------------- tools for Jarvis's brain --
-def start_coding(project: str) -> str:
+def start_coding(project: str, new_session: bool = False) -> str:
     """Tool: turn code mode on (when the user asks in their own words)."""
     folder, options = find_project(project or "")
     if folder:
-        return start(folder)
+        return start(folder, fresh=new_session)
     if options:
         return "Several projects match: " + "; ".join(options) + ". Ask the user which, then call again with its path."
     return "I couldn't find a project by that name. Ask the user for the folder's name."

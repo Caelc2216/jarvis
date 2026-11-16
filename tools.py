@@ -283,10 +283,10 @@ def set_input_mode(mode: str, read_aloud: bool | None = None) -> str:
     return hud.set_input(mode, read_aloud)
 
 
-def start_coding(project: str) -> str:
+def start_coding(project: str, new_session: bool = False) -> str:
     import coder
 
-    return coder.start_coding(project)
+    return coder.start_coding(project, new_session)
 
 
 def stop_coding() -> str:
@@ -344,8 +344,9 @@ TOOLS = [
         ["mode"])),
     (start_coding, "Turn on code mode: from now on the user's requests go to Claude Code, which edits code in "
      "that project folder (it opens in VS Code). Use when the user wants help coding on / programming a "
-     "project. project: the project's name as the user said it, or a folder path.",
-     _s({"project": {"type": "string"}}, ["project"])),
+     "project, or to switch code mode to another project. project: the project's name as the user said it, "
+     "or a folder path. new_session: true if they want a fresh Claude Code conversation there.",
+     _s({"project": {"type": "string"}, "new_session": {"type": "boolean"}}, ["project"])),
     (stop_coding, "Turn code mode off.", _s({}, [])),
     (show_claude_code, "In code mode: open the live view window showing what Claude Code is doing.", _s({}, [])),
     (open_claude_terminal, "Open an interactive Claude Code session in a terminal, in a project folder, for the "
