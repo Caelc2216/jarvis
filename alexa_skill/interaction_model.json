@@ -1,7 +1,7 @@
 {
   "interactionModel": {
     "languageModel": {
-      "invocationName": "jarvis",
+      "invocationName": "home jarvis",
       "intents": [
         {
           "name": "MessageIntent",
