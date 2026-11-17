@@ -143,9 +143,10 @@ def main() -> None:
     say("   3. Build tab > Interaction Model > JSON Editor: replace everything with the contents of")
     say(f"      {SKILL / 'interaction_model.json'}   then Save and Build skill.")
     say(f"   4. Code tab: replace lambda_function.py with   {out}   then Save and Deploy.")
-    say("   5. Test tab: set 'Skill testing is enabled in' to Development. Type: tell home jarvis that dinner is ready")
-    say("   Then on any Echo: 'Alexa, tell Home Jarvis that dinner is ready.'")
-    say("   (Alexa needs a two-word name; to use another, change invocationName in the JSON editor.)")
+    say("   5. Test tab: set 'Skill testing is enabled in' to Development. Type: tell jarvis computer that dinner is ready")
+    say("   Then on any Echo: 'Alexa, tell Jarvis Computer that dinner is ready.'")
+    say("   (Alexa needs a two-word name; to use another, change invocationName in the JSON editor. Avoid")
+    say("   home / house / everyone: 'tell home ...' starts Alexa's own announcement instead of the skill.)")
 
 
 if __name__ == "__main__":
