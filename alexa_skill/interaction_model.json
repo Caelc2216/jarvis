@@ -25,7 +25,18 @@
             "to let him know {message}",
             "to let him know that {message}",
             "the message {message}",
-            "message {message}"
+            "message {message}",
+            "to pass on {message}",
+            "to pass on that {message}",
+            "to pass along {message}",
+            "to pass along that {message}",
+            "pass on {message}",
+            "to send {message}",
+            "to send the message {message}",
+            "send {message}",
+            "to relay {message}",
+            "to relay that {message}",
+            "relay {message}"
           ]
         },
         { "name": "AMAZON.CancelIntent", "samples": [] },
