@@ -50,6 +50,51 @@ _cancelled = False
 _lock = threading.Lock()
 
 
+# --------------------------------------------------------- Claude Code or Codex --
+def backend() -> str:
+    """'claude' (Claude Code) or 'codex' (OpenAI Codex). CODER=claude|codex in .env decides; otherwise
+    it follows the brain chosen in setup (ChatGPT/Codex brain -> Codex), if that tool is installed."""
+    choice = os.getenv("CODER", "").strip().lower()
+    if choice in ("claude", "codex"):
+        return choice
+    prefer = "codex" if os.getenv("BRAIN", "").strip().lower() in ("codex", "chatgpt", "openai") else "claude"
+    other = "claude" if prefer == "codex" else "codex"
+    return other if not shutil.which(prefer) and shutil.which(other) else prefer
+
+
+def label() -> str:
+    return "Codex" if backend() == "codex" else "Claude Code"
+
+
+_sandbox_checked: tuple[bool, str] | None = None
+
+
+def codex_sandbox_ok() -> tuple[bool, str]:
+    """Codex is only ever run inside its sandbox. Check the sandbox actually works on this PC first."""
+    global _sandbox_checked
+    if _sandbox_checked and _sandbox_checked[0]:
+        return _sandbox_checked
+    exe = shutil.which("codex")
+    try:
+        r = subprocess.run([exe, "sandbox", "cmd", "/c", "echo", "jarvis-sandbox-ok"], capture_output=True,
+                           text=True, encoding="utf-8", errors="replace", timeout=90, creationflags=NO_WINDOW)
+        ok = "jarvis-sandbox-ok" in r.stdout
+        detail = (r.stderr or r.stdout).strip()
+    except Exception as e:
+        ok, detail = False, str(e)
+    if ok:
+        _sandbox_checked = (True, "")
+    else:
+        print(f"  (Codex sandbox check failed: {detail[-400:]})")
+        why = ("Codex's safety sandbox isn't working on this PC, so I won't let it run code. "
+               + ("Its install folder is so deep that Windows can't open its files. Turning on Windows long "
+                  "paths, or reinstalling Codex somewhere shorter, fixes it. " if "cannot find the path" in detail
+                  else "The details are in jarvis.log. ")
+               + "Claude Code works without it, if you have it: set CODER=claude in the .env file.")
+        _sandbox_checked = (False, why)
+    return _sandbox_checked
+
+
 # ------------------------------------------------------------------- state --
 def _load() -> dict:
     try:
@@ -113,8 +158,15 @@ UNDO_RE = re.compile(r"^(?:(?:okay|ok|please|(?:can|could|would) you|go ahead an
 #   - Jarvis's everyday jobs: music, timers, weather, time, lights, opening/closing apps...
 # and anything starting with "Claude" always goes to Claude Code.
 ADDRESS_JARVIS = re.compile(r"^\s*(?:(?:hey|okay|ok|hi|yo|so|um|uh)[,\s]+)?jarvis\b[\s,.:;!?-]*", re.I)
-ADDRESS_CLAUDE = re.compile(r"^\s*(?:(?:hey|okay|ok)[,\s]+)?(?:(?:tell|ask)\s+)?claude(?:\s+code)?\b(?:\s+to\b)?"
-                            r"[\s,.:;!?-]*", re.I)
+ADDRESS_CLAUDE = re.compile(r"^\s*(?:(?:hey|okay|ok)[,\s]+)?(?:(?:tell|ask)\s+)?(?:claude(?:\s+code)?|codex)\b"
+                            r"(?:\s+to\b)?[\s,.:;!?-]*", re.I)
+# Leaving and re-entering code mode.
+BACK_TO_JARVIS = re.compile(r"^(?:(?:okay|ok|alright)[,\s]+)?(?:(?:go\s+)?back to jarvis|(?:jarvis[,\s]+)?(?:you )?take "
+                            r"(?:it )?over(?: jarvis)?|exit (?:claude(?: code)?|codex)|leave (?:claude(?: code)?|codex)|"
+                            r"(?:that'?s )?enough coding)[.!]*$", re.I)
+BACK_TO_CODE = re.compile(r"^(?:(?:okay|ok|alright)[,\s]+)?(?:(?:go\s+)?back to|return to|resume|continue|keep)\s+"
+                          r"(?:with\s+)?(?:the\s+|my\s+)?(?:claude(?: code)?|codex|coding|code mode|the code|programming)"
+                          r"(?:\s+session)?[.!]*$", re.I)
 JARVIS_TOPICS = re.compile(
     r"^(?:(?:can|could|would) you\s+|please\s+)?(?:play|pause|resume|unpause|skip|shuffle)\b"
     r"|^(?:(?:can|could|would) you\s+|please\s+)?(?:play|put on)\b.*\b(?:music|song|songs|album|playlist|track|by)\b"
@@ -245,17 +297,39 @@ def start(folder: str, fresh: bool = False) -> str:
         shown = " The live view shows what Claude Code is doing."
     _activity(f"Code mode · {project_name(folder)}")
     again = " We'll pick up where we left off." if prev else ""
-    return (f"Code mode on for {project_name(folder)}, open in VS Code.{again}{shown} Tell me what you'd like "
-            "built or fixed. Say undo that to reverse a change, or stop coding when you're done.")
+    shown = shown.replace("Claude Code", label())
+    return (f"Code mode on for {project_name(folder)} with {label()}, open in VS Code.{again}{shown} Tell me "
+            "what you'd like built or fixed. Say undo that to reverse a change, or back to Jarvis when you're done.")
 
 
 def stop() -> str:
     state = _load()
     name = project_name(state.get("project", ""))
+    if state.get("project"):
+        state["last_project"] = state["project"]
     state["project"] = ""
     _save(state)
     _activity("Code mode off")
-    return f"Done coding on {name}. Back to normal." if name else "Code mode was already off."
+    return (f"Done coding on {name}. Back to normal; say back to {label().split()[0]} to pick it up again."
+            if name else "Code mode was already off.")
+
+
+def last_project() -> str:
+    """The project code mode was last on (to go straight back to it)."""
+    p = _load().get("last_project", "")
+    return p if p and Path(p).is_dir() else ""
+
+
+def resume() -> str:
+    """Back into code mode on the last project, continuing the same conversation."""
+    folder = last_project()
+    if not folder:
+        return ""
+    state = _load()
+    state.update(project=folder, session_id=state.get("sessions", {}).get(folder, {}).get("id"))
+    _save(state)
+    _activity(f"Code mode · {project_name(folder)}")
+    return f"Back to {label()} on {project_name(folder)}."
 
 
 def _open_vscode(folder: str) -> None:
@@ -313,38 +387,42 @@ def show_live() -> str:
     return "Opened the live view of what Claude Code is doing."
 
 
-def open_terminal() -> str:
-    """Take over: the same Claude Code conversation in a terminal you can type in."""
-    folder, sid = active(), _load().get("session_id")
-    if not folder:
-        return "Code mode isn't on."
-    if busy():
-        return "Claude Code is still working on your last request. Try again when it's finished."
-    claude = shutil.which("claude") or "claude"
-    args = [claude] + (["--resume", sid] if sid else [])
+def _terminal(folder: str, args: list, title: str) -> None:
     wt = shutil.which("wt")
     if wt:
-        subprocess.Popen([wt, "-w", "new", "--title", f"Claude Code - {project_name(folder)}", "-d", folder, *args],
-                         creationflags=NO_WINDOW)
+        subprocess.Popen([wt, "-w", "new", "--title", title, "-d", folder, *args], creationflags=NO_WINDOW)
     else:
         subprocess.Popen(["cmd", "/k", subprocess.list2cmdline(args)], cwd=folder, creationflags=0x00000010)
-    return ("Opened Claude Code in a terminal" + (", with our conversation so far." if sid else ".")
+
+
+def open_terminal() -> str:
+    """Take over: the same conversation in a terminal you can type in (interactive Claude Code / Codex)."""
+    folder, state = active(), _load()
+    if not folder:
+        return "Code mode isn't on."
+    name = label()
+    if busy():
+        return f"{name} is still working on your last request. Try again when it's finished."
+    sess = state.get("sessions", {}).get(folder, {})
+    sid = state.get("session_id") if sess.get("backend", "claude") == backend() else None
+    exe = shutil.which(backend()) or backend()
+    if backend() == "codex":
+        args = [exe, "resume", sid] if sid else [exe]
+    else:
+        args = [exe] + (["--resume", sid] if sid else [])
+    _terminal(folder, args, f"{name} - {project_name(folder)}")
+    return (f"Opened {name} in a terminal" + (", with our conversation so far." if sid else ".")
             + " Type there yourself. If you ask me for more, finish there first so you don't both edit at once.")
 
 
 def open_claude_terminal(project: str) -> str:
-    """Tool: a plain interactive Claude Code session in a project folder (no code mode)."""
+    """Tool: a plain interactive Claude Code (or Codex) session in a project folder (no code mode)."""
     folder, options = find_project(project or "")
     if not folder:
         return ("Several projects match: " + "; ".join(options) + ". Ask which.") if options else \
             "I couldn't find that project. Ask the user for the folder's name."
-    claude = shutil.which("claude") or "claude"
-    wt = shutil.which("wt")
-    if wt:
-        subprocess.Popen([wt, "-w", "new", "-d", folder, claude], creationflags=NO_WINDOW)
-    else:
-        subprocess.Popen(["cmd", "/k", claude], cwd=folder, creationflags=0x00000010)
-    return f"Opened Claude Code in a terminal in {project_name(folder)}."
+    _terminal(folder, [shutil.which(backend()) or backend()], f"{label()} - {project_name(folder)}")
+    return f"Opened {label()} in a terminal in {project_name(folder)}."
 
 
 # ---------------------------------------------------------------- snapshots --
@@ -483,19 +561,111 @@ def _hook_settings() -> str:
 
 
 def ask(task: str, on_progress=None) -> str:
-    """Give Claude Code one request in the current project. Blocks until it's done; returns its summary."""
-    global _proc, _cancelled
+    """Give the coding assistant one request in the current project. Blocks until it's done; returns
+    its summary (to be spoken)."""
     folder = active()
     if not folder:
         return "Code mode isn't on. Say let's code on, and the project's name."
-    claude = shutil.which("claude")
-    if not claude:
-        return "I can't find Claude Code (the claude command). Install it and sign in, then try again."
+    which, name = backend(), label()
+    exe = shutil.which(which)
+    if not exe:
+        return (f"I can't find {name} (the {which} command). Install it and sign in, then try again."
+                + (" Or set CODER=codex in .env to use Codex instead." if which == "claude" else ""))
+    if which == "codex":
+        ok, why = codex_sandbox_ok()
+        if not ok:
+            return why
     state = _load()
-    sid = state.get("session_id")
+    sess = state.get("sessions", {}).get(folder, {})
+    sid = state.get("session_id") if sess.get("backend", "claude") == which else None
     before = snapshot(folder, f"before: {task}")
+    t0 = time.time()
+    _live(f"\n[{time.strftime('%H:%M:%S')}] You: {task}")
 
-    cmd = [claude, "-p", "--output-format", "stream-json", "--verbose", "--settings", _hook_settings(),
+    if which == "claude":
+        sid, result, error, turns = _run_claude(exe, folder, task, sid, on_progress)
+    else:
+        sid, result, error, turns, offline = _run_codex(exe, folder, task, sid, on_progress, network=False)
+        if offline and not _cancelled:
+            # The sandbox keeps Codex offline. It needed the internet (e.g. to install a package): ask.
+            import hud
+
+            allowed = False
+            if hud.approval_handler:
+                allowed, _ = hud.approval_handler(f"use the internet for this request ({offline[:200]})",
+                                                  "use the internet to finish this request")
+            if allowed:
+                _live("  (internet allowed for this request)")
+                retry = ("Internet access is now allowed for this request. Retry the steps that failed because "
+                         "there was no network, then finish what I asked.")
+                sid, result2, error, turns2, _ = _run_codex(exe, folder, retry, sid, on_progress, network=True)
+                result, turns = result2 or result, turns + turns2
+            else:
+                result += " I didn't give it internet access, so anything that needed a download wasn't done."
+
+    took = time.time() - t0
+    _live(f"[{time.strftime('%H:%M:%S')}] " + ("Stopped." if _cancelled else
+                                               f"Problem: {error[:200]}" if error and not result else
+                                               f"Done in {took:.0f} s.") + "\n")
+    after = snapshot(folder, f"after: {task}")
+    state = _load()
+    state["session_id"] = sid
+    state.setdefault("sessions", {})[folder] = {"id": sid, "t": time.time(), "backend": which}
+    files = changed_files(folder, before, after) if before and after else []
+    if before and after and files:
+        history = state.setdefault("snapshots", {}).setdefault(folder, [])
+        history.append({"before": before, "after": after, "task": task[:200], "t": time.time()})
+        del history[:-20]
+    _save(state)
+    try:
+        import metrics
+
+        metrics.record("code", backend=which, seconds=took, turns=turns, files=len(files), ok=not error)
+    except Exception:
+        pass
+
+    if _cancelled:
+        return "Stopped." + (" Say undo that to put the files back." if files else "")
+    if error and not result:
+        if re.search(r"usage limit|limit reached|rate limit|quota", error, re.I):
+            return f"{name} says you've hit your plan's usage limit. It resets after a while; try again later."
+        return f"{name} ran into a problem: {error[:200]}"
+    return result
+
+
+def _spawn(cmd: list, folder: str, env: dict, text: str) -> subprocess.Popen:
+    global _proc, _cancelled
+    with _lock:
+        _cancelled = False
+        _proc = subprocess.Popen(cmd, cwd=folder, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                 stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace",
+                                 creationflags=NO_WINDOW)
+        _proc.stdin.write(text)
+        _proc.stdin.close()
+        return _proc
+
+
+def _finish(proc: subprocess.Popen, timer: threading.Timer) -> str:
+    global _proc
+    timer.cancel()
+    try:
+        proc.wait(timeout=30)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+    with _lock:
+        _proc = None
+    return (proc.stderr.read() or "").strip()
+
+
+def _progress(line: str, on_progress) -> None:
+    if line:
+        _activity(line[:60])
+        if on_progress:
+            on_progress(line)
+
+
+def _run_claude(exe: str, folder: str, task: str, sid: str | None, on_progress):
+    cmd = [exe, "-p", "--output-format", "stream-json", "--verbose", "--settings", _hook_settings(),
            "--permission-mode", "acceptEdits", "--allowedTools", *ALLOWED_TOOLS,
            "--append-system-prompt", VOICE_NOTE]
     if os.getenv("CODER_MODEL"):
@@ -508,20 +678,11 @@ def ask(task: str, on_progress=None) -> str:
     env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}  # use the Claude plan, not API billing
     env["JARVIS_CODER_PROJECT"] = folder
 
-    t0, result, error, turns = time.time(), "", "", 0
-    _live(f"\n[{time.strftime('%H:%M:%S')}] You: {task}")
-    bash_ids = set()
-    with _lock:
-        _cancelled = False
-        _proc = subprocess.Popen(cmd, cwd=folder, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                 stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace",
-                                 creationflags=NO_WINDOW)
-    proc = _proc
+    result, error, turns, bash_ids = "", "", 0, set()
+    proc = _spawn(cmd, folder, env, task)
     timer = threading.Timer(MAX_TASK_S, cancel)
     timer.start()
     try:
-        proc.stdin.write(task)
-        proc.stdin.close()
         for line in proc.stdout:
             try:
                 e = json.loads(line)
@@ -538,11 +699,7 @@ def ask(task: str, on_progress=None) -> str:
                             _live(_live_line(name, inp, folder))
                         if name in ("Bash", "PowerShell"):
                             bash_ids.add(c.get("id"))
-                        line_ = _describe(name, inp)
-                        if line_:
-                            _activity(line_[:60])
-                            if on_progress:
-                                on_progress(line_)
+                        _progress(_describe(name, inp), on_progress)
                     elif c.get("type") == "text" and c.get("text", "").strip():
                         _live("  Claude: " + c["text"].strip().replace("\n", "\n          "))
             elif kind == "user":  # tool results: show command output and refusals
@@ -556,51 +713,115 @@ def ask(task: str, on_progress=None) -> str:
                     if c.get("is_error"):
                         _live("    ! " + body[:300].replace("\n", "\n      "))
                     elif c.get("tool_use_id") in bash_ids and body:
-                        lines = body.splitlines()
-                        shown = lines[:15] + ([f"... ({len(lines) - 15} more lines)"] if len(lines) > 15 else [])
-                        _live("\n".join("    | " + ln for ln in shown))
+                        _live(_output_block(body))
             elif kind == "result":
                 sid = e.get("session_id") or sid
                 turns = e.get("num_turns", 0)
                 result = e.get("result") or ""
                 if e.get("is_error"):
                     error = result or e.get("subtype", "error")
-        proc.wait(timeout=30)
-        if not result and not error:
-            error = (proc.stderr.read() or "").strip()[-300:] or "Claude Code stopped without an answer."
     finally:
-        timer.cancel()
-        with _lock:
-            _proc = None
+        stderr = _finish(proc, timer)
+    if not result and not error:
+        error = stderr[-300:] or "Claude Code stopped without an answer."
+    return sid, result, error, turns
 
-    took = time.time() - t0
-    _live(f"[{time.strftime('%H:%M:%S')}] " + ("Stopped." if _cancelled else
-                                               f"Problem: {error[:200]}" if error and not result else
-                                               f"Done in {took:.0f} s.") + "\n")
-    after = snapshot(folder, f"after: {task}")
-    state = _load()
-    state["session_id"] = sid
-    state.setdefault("sessions", {})[folder] = {"id": sid, "t": time.time()}
-    files = changed_files(folder, before, after) if before and after else []
-    if before and after and files:
-        history = state.setdefault("snapshots", {}).setdefault(folder, [])
-        history.append({"before": before, "after": after, "task": task[:200], "t": time.time()})
-        del history[:-20]
-    _save(state)
+
+# Signs that a command failed because the Codex sandbox keeps it offline.
+OFFLINE = re.compile(r"getaddrinfo|ENOTFOUND|EAI_AGAIN|Could not resolve host|No such host is known|"
+                     r"Temporary failure in name resolution|Name or service not known|Network is unreachable|"
+                     r"Failed to establish a new connection|remote name could not be resolved|WinError 10013|"
+                     r"forbidden by its access permissions|unable to access 'https?:|ECONNREFUSED|ETIMEDOUT|"
+                     r"Could not fetch URL|connection (?:was )?(?:refused|reset)", re.I)
+
+
+def _plain_command(cmd: str) -> str:
+    """Codex wraps commands in powershell.exe -Command '...': show just the command."""
+    m = re.match(r"""^"?[^"]*powershell(?:\.exe)?"?\s+(?:-NoProfile\s+)?-Command\s+(['"])(.*)\1\s*$""", cmd or "",
+                 re.I | re.S)
+    return (m.group(2) if m else cmd or "").strip()
+
+
+def _run_codex(exe: str, folder: str, task: str, sid: str | None, on_progress, network: bool):
+    """One Codex request, sandboxed to the project folder (and offline unless network=True).
+    Returns (session id, summary, error, turns, what needed the internet or "")."""
+    opts = ["--json", "--skip-git-repo-check", "--ignore-user-config",  # no personal MCP tools: nothing unsandboxed
+            "--sandbox", "workspace-write", "-c", 'approval_policy="never"', "-C", folder]
+    if network:
+        opts += ["-c", "sandbox_workspace_write.network_access=true"]
+    model = os.getenv("CODER_MODEL") or os.getenv("CODEX_MODEL")
+    if model:
+        opts += ["-m", model]
+    if sid:
+        cmd, text = [exe, "exec", *opts, "resume", sid, "-"], task
+    else:
+        cmd, text = [exe, "exec", *opts, "-"], f"<instructions>\n{VOICE_NOTE}\n</instructions>\n\n{task}"
+    env = {k: v for k, v in os.environ.items() if k != "OPENAI_API_KEY"}  # use the ChatGPT plan, not API billing
+
+    result, error, turns, offline = "", "", 0, ""
+    proc = _spawn(cmd, folder, env, text)
+    timer = threading.Timer(MAX_TASK_S, cancel)
+    timer.start()
     try:
-        import metrics
+        for line in proc.stdout:
+            try:
+                e = json.loads(line)
+            except ValueError:
+                continue
+            kind, item = e.get("type"), e.get("item") or {}
+            it = item.get("type")
+            if kind == "thread.started":
+                sid = e.get("thread_id") or sid
+            elif kind == "turn.completed":
+                turns += 1
+            elif kind in ("turn.failed", "error"):
+                error = str((e.get("error") or {}).get("message") or e.get("message") or "Codex failed")
+            elif kind == "item.started" and it == "command_execution":
+                command = _plain_command(item.get("command", ""))
+                _live(f"  $ {command}")
+                _progress("Running " + command[:50], on_progress)
+            elif kind == "item.completed":
+                if it == "command_execution":
+                    out = (item.get("aggregated_output") or "").strip()
+                    if out:
+                        _live(_output_block(out))
+                    if item.get("exit_code") not in (0, None):
+                        _live(f"    ! exit code {item.get('exit_code')}")
+                        if not network and OFFLINE.search(out):
+                            offline = _plain_command(item.get("command", ""))[:120]
+                elif it == "file_change":
+                    for ch in item.get("changes") or []:
+                        path = ch.get("path", "")
+                        try:
+                            path = str(Path(path).resolve().relative_to(folder))
+                        except (ValueError, OSError):
+                            pass
+                        mark = {"add": "+ Writing", "delete": "- Deleting"}.get(ch.get("kind"), "~ Editing")
+                        _live(f"  {mark} {path}" + ("" if item.get("status") != "failed" else "  (failed)"))
+                        _progress(f"{mark[2:]} {Path(path).name}", on_progress)
+                elif it == "agent_message" and (item.get("text") or "").strip():
+                    result = item["text"].strip()
+                    _live("  Codex: " + result.replace("\n", "\n         "))
+                elif it == "todo_list":
+                    _live("  Plan:\n" + "\n".join(f"    [{'x' if t.get('completed') else ' '}] {t.get('text', '')}"
+                                                  for t in item.get("items") or []))
+                    _progress("Planning the steps", on_progress)
+                elif it == "web_search":
+                    _live(f"  @ Web search: {item.get('query', '')}")
+                    _progress("Looking it up online", on_progress)
+                elif it == "mcp_tool_call":
+                    _live(f"  * {item.get('server', '')}.{item.get('tool', '')}")
+    finally:
+        stderr = _finish(proc, timer)
+    if not result and not error:
+        error = stderr[-300:] or "Codex stopped without an answer."
+    return sid, result, error, turns, offline
 
-        metrics.record("code", seconds=time.time() - t0, turns=turns, files=len(files), ok=not error)
-    except Exception:
-        pass
 
-    if _cancelled:
-        return "Stopped." + (" Say undo that to put the files back." if files else "")
-    if error and not result:
-        if "usage limit" in error.lower() or "limit reached" in error.lower():
-            return "Claude Code says you've hit your plan's usage limit. It resets after a while; try again later."
-        return f"Claude Code ran into a problem: {error[:200]}"
-    return result
+def _output_block(body: str) -> str:
+    lines = body.splitlines()
+    shown = lines[:15] + ([f"... ({len(lines) - 15} more lines)"] if len(lines) > 15 else [])
+    return "\n".join("    | " + ln for ln in shown)
 
 
 def busy() -> bool:

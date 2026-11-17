@@ -257,6 +257,8 @@
     $('brain2').textContent = s.brain || '—';
     $('routine').textContent = s.routine ? s.routine.toUpperCase() + ' MODE' : '';
     $('coding').textContent = s.coding ? 'CODING · ' + s.coding.toUpperCase() : '';
+    $('approval-k').textContent = (s.coder_label || 'Claude Code').toUpperCase() + ' WANTS TO';
+    $('stopbtn').textContent = 'STOP ' + (s.coder_label || 'coding').toUpperCase() + ' TASK';
     $('stopbtn').classList.toggle('on', !!s.coding_busy && !s.approval);
     const ap = s.approval;
     $('approval').classList.toggle('on', !!ap);

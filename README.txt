@@ -55,15 +55,19 @@ SPEED AND LAPTOPS
   On a laptop or slower PC: run setup.bat and pick Claude or ChatGPT as the brain (the free
   local brain runs ON your PC and is heavy), and add  PERFORMANCE=lite  to .env.
 
-CODING WITH CLAUDE CODE (needs Claude Code installed and signed in)
+CODING WITH CLAUDE CODE OR CODEX (needs one installed and signed in; it follows your brain choice,
+or set CODER=claude / CODER=codex in .env)
   Say "let's code on <project name>". Jarvis opens it in VS Code and passes what you ask to
   Claude Code, which edits the project. Progress shows on the display; you hear a short summary.
   Before it runs anything risky (installing, deleting, scripts) Jarvis asks you first: answer
   yes/no, or click Allow / Don't allow. Say "undo that" to put the files back, "show me what
   Claude is doing" for the live view, "let me type in it myself" to take over in a terminal,
-  "switch to my <other> project" to change projects, and "stop coding" when you're done.
+  "switch to my <other> project" to change projects, and "back to Jarvis" (or "stop coding")
+  when you're done. "Back to Claude" (or "Claude, <request>") picks the last project up again.
   While coding, music, timers, weather, opening apps etc. still go to Jarvis. To be sure who
-  gets it, start with "Jarvis, ..." or "Claude, ...".
+  gets it, start with "Jarvis, ..." or "Claude, ..." ("Codex, ..." for Codex).
+  Codex works differently: instead of asking before each command, it runs in a sandbox that can
+  only change the project folder and has no internet; Jarvis asks you before allowing internet.
 
 IF SOMETHING'S WRONG
   Look at jarvis.log in this folder - it says what Jarvis heard and did.

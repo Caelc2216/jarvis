@@ -675,10 +675,10 @@ def ask_permission(question: str, say: str = "") -> tuple[bool, str]:
         ev.set()
 
     aid = hud.show_approval(question, done)
-    remote_discord.notify(f"Claude Code wants to {question}. Answer on the Jarvis display.")
+    remote_discord.notify(f"{coder.label()} wants to {question}. Answer on the Jarvis display.")
     try:
         if hud.input_mode() == "voice" and _voice_listen:
-            speak(f"Claude Code wants to {say or question}. Should I allow it?")
+            speak(f"{coder.label()} wants to {say or question}. Should I allow it?")
             for _ in range(2):
                 if ev.is_set():
                     break
@@ -688,7 +688,7 @@ def ask_permission(question: str, say: str = "") -> tuple[bool, str]:
                     done(verdict)
                 elif len(said.split()) >= 3:  # a change of plan: tell Claude Code instead of running it
                     done(False, f"The user said: {said}")
-                    speak("Okay, I'll tell Claude Code.")
+                    speak(f"Okay, I'll tell {coder.label()}.")
                 elif said:
                     speak("Sorry, yes or no?")
         else:  # text mode: a typed yes / no works as well as the buttons
@@ -717,7 +717,7 @@ def ask_permission(question: str, say: str = "") -> tuple[bool, str]:
 
 
 def _sync_coding_chip() -> None:
-    hud.set_info(coding=coder.project_name() if coder.active() else "")
+    hud.set_info(coding=coder.project_name() if coder.active() else "", coder_label=coder.label())
 
 
 def handle_code(text: str, say, listen) -> bool:
@@ -738,8 +738,23 @@ def handle_code(text: str, say, listen) -> bool:
         _sync_coding_chip()
         return True
     if not coder.active():
+        # "back to Claude" / "continue coding" / "Claude, fix the tests": straight back into the last project.
+        back = coder.BACK_TO_CODE.match(text) or re.fullmatch(r"(?:claude(?: code)?|codex)[.!?]*", text, re.I)
+        if (back or who == "claude") and coder.last_project():
+            note = coder.resume()
+            _sync_coding_chip()
+            if who == "claude" and not back:
+                hud.activity(note)
+                _code_request(plain, say)
+            else:
+                say(note + " What's next?")
+            return True
         return False
     _sync_coding_chip()
+    if coder.BACK_TO_JARVIS.match(text) or (who == "jarvis" and re.match(r"(?:you )?take (?:it )?over\b", plain, re.I)):
+        say(coder.stop())
+        _sync_coding_chip()
+        return True
     if who == "claude":
         _code_request(plain, say)
         return True
@@ -762,7 +777,7 @@ def handle_code(text: str, say, listen) -> bool:
         say(f"We're already working on {coder.project_name()}. What would you like done?")
     elif who == "jarvis" or coder.for_jarvis(plain):
         print("  (code mode: this one's for Jarvis)")
-        hud.activity("For Jarvis, not Claude Code")
+        hud.activity(f"For Jarvis, not {coder.label()}")
         return False  # the normal Jarvis handles it; code mode stays on
     else:
         _code_request(plain, say)
@@ -770,9 +785,9 @@ def handle_code(text: str, say, listen) -> bool:
 
 
 def _code_request(text: str, say) -> None:
-    hud.activity("To Claude Code")
-    hud.set_info(coding_busy=True)
-    hud.state("thinking", "Working on it in Claude Code…")
+    hud.activity(f"To {coder.label()}")
+    hud.set_info(coding_busy=True, coder_label=coder.label())
+    hud.state("thinking", f"Working on it in {coder.label()}…")
     t0 = time.time()
     try:
         reply = coder.ask(text, on_progress=lambda line: hud.state("thinking", line + "…"))
