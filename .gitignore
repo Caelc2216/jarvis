@@ -33,3 +33,5 @@ models/silero_vad.onnx
 metrics.jsonl
 coder_live.log
 voice_state.json
+alexa_seen.json
+alexa_skill/lambda_function.py

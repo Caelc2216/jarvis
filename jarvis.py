@@ -281,6 +281,33 @@ def announce_update() -> None:
     hud.state("idle")
 
 
+def _chime() -> None:
+    """A soft two-note chime so an announcement doesn't start mid-word."""
+    try:
+        import sounddevice as sd
+
+        rate = 22050
+        notes = []
+        for freq in (880, 1320):
+            t = np.linspace(0, 0.18, int(rate * 0.18), endpoint=False)
+            notes.append(0.25 * np.sin(2 * np.pi * freq * t) * np.exp(-t * 9))
+        sd.play(np.concatenate(notes).astype(np.float32), rate)
+        sd.wait()
+    except Exception:
+        pass
+
+
+def announce_from_alexa(text: str) -> None:
+    """Someone said "Alexa, tell Jarvis ...": read it out (announcements only; never run as a command)."""
+    was_asleep = hud.mode() == "idle"
+    hud.activity(f"Alexa · {text[:40]}")
+    with _speak_lock:
+        _chime()
+    speak(f"Message from Alexa: {text}")
+    if was_asleep:
+        hud.state("idle", wake_hint() if hud.input_mode() == "voice" else None)
+
+
 def watch_timers() -> None:
     """Speak up when a timer set by any brain is done."""
     while True:
@@ -555,7 +582,7 @@ def main() -> None:
                 f"Right now: {hud.mode()}."
                 + (f" Playing: {playing['title']} by {playing['artist']}." if playing else ""))
 
-    remote_discord.start(remote_ask, remote_status)
+    remote_discord.start(remote_ask, remote_status, announce_from_alexa)
     threading.Thread(target=serve_typed, args=(brain,), daemon=True).start()  # text mode on the display
     hud.approval_handler = ask_permission  # code mode: Claude Code asks before risky commands
     hud.stop_handler = coder.cancel

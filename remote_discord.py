@@ -25,6 +25,39 @@ _client = None
 _loop: asyncio.AbstractEventLoop | None = None
 _owner_id = 0
 
+# Alexa -> Jarvis: the private Alexa skill posts "<@bot> message" through one Discord webhook
+# (Set up Alexa.bat). Only messages from THAT webhook count, and they're only ever read out loud,
+# never run as commands (anyone near the Echo can talk to it).
+ALEXA_STATE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "alexa_seen.json")
+ALEXA_CATCH_UP_MIN = 15  # after a restart/sleep, read messages up to this old; skip older ones
+
+
+def _alexa_ids() -> tuple[str, str]:
+    return os.getenv("ALEXA_WEBHOOK_ID", "").strip(), os.getenv("ALEXA_CHANNEL_ID", "").strip()
+
+
+def _alexa_text(client, message) -> str:
+    text = message.content.replace(f"<@{client.user.id}>", "").replace(f"<@!{client.user.id}>", "")
+    return " ".join(text.split())[:300]
+
+
+def _alexa_seen(mid: int | None = None) -> int:
+    """The newest Alexa message already read out (so a restart doesn't repeat it)."""
+    import json
+
+    if mid is not None:
+        try:
+            with open(ALEXA_STATE, "w", encoding="utf-8") as f:
+                json.dump({"last": mid}, f)
+        except OSError:
+            pass
+        return mid
+    try:
+        with open(ALEXA_STATE, encoding="utf-8") as f:
+            return int(json.load(f).get("last", 0))
+    except (OSError, ValueError):
+        return 0
+
 
 def enabled() -> bool:
     return (os.getenv("REMOTE", "on").lower() not in ("off", "0", "false", "no")
@@ -64,7 +97,7 @@ def _screenshot():
     return discord.File(buf, filename=f"screens-{time.strftime('%H%M')}.jpg")
 
 
-def _make_client(on_owner_message, on_mention=None):
+def _make_client(on_owner_message, on_mention=None, on_alexa=None):
     import discord
 
     intents = discord.Intents.default()  # DMs carry their text without the privileged content intent
@@ -72,8 +105,32 @@ def _make_client(on_owner_message, on_mention=None):
     class JarvisBot(discord.Client):
         async def on_ready(self):
             print(f"  (Discord remote ready as {self.user})")
+            if on_alexa:
+                await self._alexa_catch_up()
+
+        async def _alexa_catch_up(self):
+            """Read Alexa messages that arrived while Jarvis was off or the PC slept (recent ones only)."""
+            hook, channel_id = _alexa_ids()
+            if not (hook and channel_id):
+                return
+            try:
+                import datetime
+
+                channel = self.get_channel(int(channel_id)) or await self.fetch_channel(int(channel_id))
+                since = discord.utils.utcnow() - datetime.timedelta(minutes=ALEXA_CATCH_UP_MIN)
+                last = _alexa_seen()
+                async for m in channel.history(after=since, oldest_first=True, limit=20):
+                    if str(m.webhook_id or "") == hook and m.id > last:
+                        await on_alexa(self, m)
+            except Exception as e:
+                print(f"  (couldn't check for missed Alexa messages: {e})")
 
         async def on_message(self, message):
+            hook, _ = _alexa_ids()
+            if on_alexa and hook and message.webhook_id and str(message.webhook_id) == hook:
+                if message.id > _alexa_seen():
+                    await on_alexa(self, message)
+                return
             if message.author.bot:
                 return
             if isinstance(message.channel, discord.DMChannel):
@@ -86,8 +143,9 @@ def _make_client(on_owner_message, on_mention=None):
     return JarvisBot(intents=intents)
 
 
-def start(ask, describe_status) -> None:
-    """Run the bot in the background. ask(text) -> reply text, using its own conversation."""
+def start(ask, describe_status, announce=None) -> None:
+    """Run the bot in the background. ask(text) -> reply text, using its own conversation.
+    announce(text): read a message from Alexa out loud (if the Alexa link is set up)."""
     global _client, _loop, _owner_id
     if not enabled():
         return
@@ -126,11 +184,24 @@ def start(ask, describe_status) -> None:
         if message.author.id == _owner_id:  # only answer the owner, and only to say where to talk
             await message.reply("For privacy I only take commands in a direct message. Click my name > Message.")
 
+    async def alexa(client, message):
+        _alexa_seen(message.id)
+        text = _alexa_text(client, message)
+        if not text:
+            return
+        print(f"  (message from Alexa: {text})")
+        if announce:
+            asyncio.get_running_loop().run_in_executor(None, announce, text)
+        try:
+            await message.add_reaction("✅")  # shows in Discord that Jarvis got it
+        except Exception:
+            pass
+
     def run():
         global _client, _loop
         _loop = asyncio.new_event_loop()
         asyncio.set_event_loop(_loop)
-        _client = _make_client(handle, mentioned)
+        _client = _make_client(handle, mentioned, alexa if announce else None)
         while True:  # reconnect forever (Wi-Fi drops, sleep/wake)
             try:
                 _loop.run_until_complete(_client.start(token, reconnect=True))
@@ -139,7 +210,7 @@ def start(ask, describe_status) -> None:
                 if "Improper token" in str(e) or "401" in str(e):
                     return  # a bad token won't fix itself
                 time.sleep(60)
-                _client = _make_client(handle, mentioned)
+                _client = _make_client(handle, mentioned, alexa if announce else None)
 
     threading.Thread(target=run, daemon=True).start()
 

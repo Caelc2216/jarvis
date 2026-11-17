@@ -1,0 +1,40 @@
+{
+  "interactionModel": {
+    "languageModel": {
+      "invocationName": "jarvis",
+      "intents": [
+        {
+          "name": "MessageIntent",
+          "slots": [{ "name": "message", "type": "AMAZON.SearchQuery" }],
+          "samples": [
+            "that {message}",
+            "say {message}",
+            "to say {message}",
+            "to say that {message}",
+            "notify {message}",
+            "to notify {message}",
+            "notify that {message}",
+            "to notify that {message}",
+            "announce {message}",
+            "to announce {message}",
+            "to announce that {message}",
+            "tell him {message}",
+            "to tell him {message}",
+            "to tell him that {message}",
+            "let him know {message}",
+            "to let him know {message}",
+            "to let him know that {message}",
+            "the message {message}",
+            "message {message}"
+          ]
+        },
+        { "name": "AMAZON.CancelIntent", "samples": [] },
+        { "name": "AMAZON.HelpIntent", "samples": [] },
+        { "name": "AMAZON.StopIntent", "samples": [] },
+        { "name": "AMAZON.NavigateHomeIntent", "samples": [] },
+        { "name": "AMAZON.FallbackIntent", "samples": [] }
+      ],
+      "types": []
+    }
+  }
+}

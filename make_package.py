@@ -23,6 +23,7 @@ FILES = [
     "setup_lights.py", "icon.py", "icon.png", "requirements.txt", ".env.example", ".gitignore", "README.txt",
     "setup.bat", "Start Jarvis.bat", "Stop Jarvis.bat", "Update Jarvis.bat", "updater.py", "version.json",
     "remote_discord.py", "Set up Discord.bat", "mic_check.py", "Test microphone.bat", "Troubleshoot Jarvis.bat", "metrics.py", "Jarvis Stats.bat", "speech.py", "coder.py", "coder_hook.py",
+    "alexa_setup.py", "Set up Alexa.bat", "alexa_skill/lambda_function.template.py", "alexa_skill/interaction_model.json",
     "models/hey_jarvis_v0.1.onnx", "models/melspectrogram.onnx", "models/embedding_model.onnx",
 ]
 
