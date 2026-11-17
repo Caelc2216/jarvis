@@ -123,7 +123,11 @@ def _make_client(on_owner_message, on_mention=None, on_alexa=None):
                     if str(m.webhook_id or "") == hook and m.id > last:
                         await on_alexa(self, m)
             except Exception as e:
-                print(f"  (couldn't check for missed Alexa messages: {e})")
+                if "Missing Access" in str(e) or "50001" in str(e):
+                    print("  (Alexa: the bot can't see the Alexa channel. It's private and the bot isn't allowed in: "
+                          "channel settings > Permissions > add the bot with View Channel + Read Message History)")
+                else:
+                    print(f"  (couldn't check for missed Alexa messages: {e})")
 
         async def on_message(self, message):
             hook, _ = _alexa_ids()

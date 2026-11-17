@@ -32,7 +32,44 @@ def _get(url: str, token: str = "") -> tuple[int, dict]:
         return 0, {}
 
 
+PRIVATE_HELP = ("\n  The channel is private, and your Jarvis bot isn't allowed in it. In Discord: channel settings (gear)\n"
+                "  > Permissions > Add members or roles > pick your Jarvis bot > allow View Channel,\n"
+                "  Read Message History and Add Reactions > Save. Then run:  Set up Alexa.bat test")
+
+
+def send_test() -> None:
+    """'Set up Alexa.bat test': check the bot can read the channel, then post a test message."""
+    env = read_env()
+    import remote_discord
+
+    token, channel = env.get("DISCORD_BOT_TOKEN", ""), env.get("ALEXA_CHANNEL_ID", "")
+    out = SKILL / "lambda_function.py"
+    if not (token and channel and out.exists()):
+        say("  Alexa isn't set up yet: run Set up Alexa.bat without 'test' first.")
+        return
+    code, _ = _get(f"https://discord.com/api/v10/channels/{channel}/messages?limit=1", token)
+    if code != 200:
+        say(PRIVATE_HELP if code == 403 else f"  Discord said {code or 'no connection'}; try again in a minute.")
+        return
+    say("  ✓ Jarvis's bot can read the channel.")
+    m = re.search(r'^WEBHOOK_URL = "([^"]+)"', out.read_text(encoding="utf-8"), re.M)
+    bot_id = remote_discord.bot_id_from_token(token)
+    subprocess.run([sys.executable, str(HERE / "startup.py"), "stop"], cwd=HERE, capture_output=True)
+    subprocess.run([sys.executable, str(HERE / "startup.py"), "start"], cwd=HERE)
+    import time
+
+    time.sleep(12)
+    body = json.dumps({"content": f"<@{bot_id}> This is a test from the Alexa setup.", "username": "Alexa",
+                       "allowed_mentions": {"users": [bot_id]}}).encode()
+    req = urllib.request.Request(m.group(1) + "?wait=true", data=body, method="POST",
+                                 headers=dict(UA, **{"Content-Type": "application/json"}))
+    urllib.request.urlopen(req, timeout=10).close()
+    say("  Sent. You should hear: 'Message from Alexa: This is a test from the Alexa setup.'")
+
+
 def main() -> None:
+    if "test" in sys.argv[1:]:
+        return send_test()
     title("Alexa -> Jarvis")
     env = read_env()
     token = env.get("DISCORD_BOT_TOKEN", "")
@@ -59,7 +96,11 @@ def main() -> None:
             return False, ("The webhook works, but your Jarvis bot isn't in that server. Invite it with:\n     "
                            + remote_discord.invite_url(token))
         info.update(id=data["id"], channel=data["channel_id"], url=url.split("?")[0].rstrip("/"))
-        return True, f"Webhook '{data.get('name', 'webhook')}' works, and Jarvis's bot can see that server."
+        code_c, _ = _get(f"https://discord.com/api/v10/channels/{data['channel_id']}/messages?limit=1", token)
+        if code_c != 200:
+            say(PRIVATE_HELP)
+            return True, "The webhook works, but Jarvis's bot can't see that channel yet (see above)."
+        return True, f"Webhook '{data.get('name', 'webhook')}' works, and Jarvis's bot can read that channel."
 
     url = secret_input("Discord webhook link", "", check, "ALEXA_WEBHOOK_URL")
     if not url or not info:
