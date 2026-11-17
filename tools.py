@@ -301,10 +301,10 @@ def show_claude_code() -> str:
     return coder.show_live() if coder.active() else "Code mode isn't on, so there's nothing running to show."
 
 
-def open_claude_terminal(project: str) -> str:
+def open_claude_terminal(project: str, tool: str = "") -> str:
     import coder
 
-    return coder.open_claude_terminal(project)
+    return coder.open_claude_terminal(project, tool)
 
 
 # --------------------------------------------------------------- registry --
@@ -349,8 +349,10 @@ TOOLS = [
      _s({"project": {"type": "string"}, "new_session": {"type": "boolean"}}, ["project"])),
     (stop_coding, "Turn code mode off.", _s({}, [])),
     (show_claude_code, "In code mode: open the live view window showing what Claude Code is doing.", _s({}, [])),
-    (open_claude_terminal, "Open an interactive Claude Code session in a terminal, in a project folder, for the "
-     "user to type in themselves (not code mode).", _s({"project": {"type": "string"}}, ["project"])),
+    (open_claude_terminal, "Open an interactive Claude Code or Codex session in a terminal, in a project folder, "
+     "for the user to type in themselves (not code mode). tool: 'codex' or 'claude' if the user named one.",
+     _s({"project": {"type": "string"}, "tool": {"type": "string", "enum": ["claude", "codex", ""]}},
+        ["project"])),
     # Routines the user builds by talking
     (create_routine, "Create (or replace) a routine: a name the user says to open several apps at once, "
      "e.g. name 'homework', apps ['Google Docs', 'Spotify']. Confirm the app list with the user first.",

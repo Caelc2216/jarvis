@@ -647,6 +647,19 @@ def record_reply(brain, heard: str, reply: str) -> None:
 
 
 BRAIN_LOCK = threading.Lock()  # voice and typed messages take turns with the same conversation
+_asked = {"until": 0.0}  # Jarvis's brain just asked the user a question
+
+
+def _brain_asked(reply: str) -> None:
+    """Remember if the reply ended with a question, so the answer goes back to the brain
+    ("Which folder?" -> "algorithms homework" must not start the school routine)."""
+    _asked["until"] = time.time() + 120 if (reply or "").rstrip().rstrip(")").endswith("?") else 0.0
+
+
+def _answering() -> bool:
+    """Is this message (probably) the answer to the question Jarvis just asked? Checked once."""
+    answering, _asked["until"] = time.time() < _asked["until"], 0.0
+    return answering
 
 
 # ----------------------------------------------------------------- code mode --
@@ -730,8 +743,12 @@ def handle_code(text: str, say, listen) -> bool:
         if not folder and query and not options:
             return False  # e.g. "help me code in Python": not a project, let the brain answer
         if not folder:
-            folder = routines.ask_for_project({"projects_folders": coder._roots(),
-                                               "ask": "Which project should we code on?"}, say, listen)
+            try:
+                folder = routines.ask_for_project({"projects_folders": coder._roots(),
+                                                   "ask": "Which project should we code on?"}, say, listen)
+            except routines.RoutineCancelled:
+                say("Okay, never mind.")
+                return True
             if not folder:
                 return True
         say(coder.start(folder))
@@ -824,7 +841,7 @@ def serve_typed(brain) -> None:
                 pass
             elif name := routines.match_save(text):
                 routines.save_layout(name, say)
-            elif name := routines.match(text):
+            elif name := routines.match(text, strict=_answering()):
                 routines.run(name, say, next_message)
             else:
                 t0 = time.time()
@@ -833,6 +850,7 @@ def serve_typed(brain) -> None:
                 think = time.time() - t0
                 metrics.record("reply", via="text", brain=getattr(brain, "last", "?"), think_s=think,
                                chars=len(reply or ""))
+                _brain_asked(reply)
                 say(reply or "Sorry, I didn't get anything back there.")
                 hud.activity(f"Reply in {think:.1f} s")
         except Exception as e:
@@ -879,7 +897,7 @@ def _conversation_factory(args, brain, listen):
                     continue
                 if name := routines.match_save(heard):
                     routines.save_layout(name, speak)
-                elif name := routines.match(heard):
+                elif name := routines.match(heard, strict=_answering()):
                     routines.run(name, speak, listen)
                 else:
                     t0 = time.time()
@@ -887,6 +905,7 @@ def _conversation_factory(args, brain, listen):
                         reply = brain.ask(heard)
                     TIMING["think_s"] = time.time() - t0
                     TIMING.pop("tts_s", None)
+                    _brain_asked(reply)
                     speak(reply)
                     record_reply(brain, heard, reply)
             except Exception as e:

@@ -64,9 +64,26 @@ def _words(text: str) -> list[str]:
     return re.findall(r"[a-z0-9]+", text.lower())
 
 
-def match(text: str) -> str | None:
-    """Routine name if the user said a routine keyword ("school", "games", "school mode")."""
+class RoutineCancelled(Exception):
+    """The user said cancel / stop / never mind partway through a routine."""
+
+
+CANCEL_RE = re.compile(r"^(?:(?:okay|ok|no|please|actually)[,\s]+)*(?:cancel|stop|abort|never\s*mind|forget (?:it|that|"
+                       r"about it)|exit|quit|end|leave)\b|\b(?:cancel|stop|exit|quit|end|leave)\s+(?:the\s+)?"
+                       r"(?:\w+\s+)?(?:mode|routine)\b", re.I)
+
+
+def is_cancel(text: str) -> bool:
+    return bool(CANCEL_RE.search((text or "").strip()))
+
+
+def match(text: str, strict: bool = False) -> str | None:
+    """Routine name if the user said a routine keyword ("school", "games", "school mode").
+    strict: only a clear request ("school mode", "start games") counts; used when the user is answering a
+    question Jarvis just asked, so "algorithms homework" as an answer doesn't start the school routine."""
     words = _words(text)
+    if strict and not set(words) & {"mode", "routine", "start", "begin", "starting", "lets"}:
+        return None
     if not words or set(words) & {"what", "when", "where", "why", "how", "who", "which", "weather"}:
         return None  # a question that mentions school isn't a request to start school mode
     if set(words) & {"close", "quit", "exit", "kill", "shut", "stop", "minimize", "hide", "end", "done"}:
@@ -210,7 +227,9 @@ def ask_for_project(step: dict, say, listen) -> str | None:
     for attempt in range(3):
         heard = (listen() or "").strip()
         plain = " ".join(_words(heard))
-        if plain in ("skip", "none", "nothing", "no", "never mind", "nevermind", "no project"):
+        if is_cancel(heard):
+            raise RoutineCancelled()
+        if plain in ("skip", "none", "nothing", "no", "no project", "skip it", "no thanks"):
             say("No project then.")
             return None
         if plain in aliases:
@@ -224,7 +243,13 @@ def ask_for_project(step: dict, say, listen) -> str | None:
             names = [_describe(f, roots) for f in options]
             say("I found a few. " + " ".join(f"{i}: {n}." for i, n in enumerate(names, 1))
                 + " Which number?")
-            pick = " ".join(_words(listen() or ""))
+            raw = listen() or ""
+            if is_cancel(raw):
+                raise RoutineCancelled()
+            pick = " ".join(_words(raw))
+            if pick in ("skip", "none", "nothing", "no", "neither", "none of them", "no project"):
+                say("No project then.")
+                return None
             for i, words in enumerate((("1", "one", "first"), ("2", "two", "second", "to", "too"),
                                        ("3", "three", "third")), 0):
                 if i < len(options) and any(w in pick.split() for w in words):
@@ -302,6 +327,12 @@ def run(name: str, say, listen) -> None:
                 pass  # launched; its window isn't known yet
             elif not step.get("ask"):
                 missing.append(step.get("label", step["type"]))
+        except RoutineCancelled:
+            remember_windows(name, opened)  # so "close school" can still close what did open
+            hud.set_info(routine="")
+            hud.activity(f"Routine cancelled · {name}")
+            say(f"Okay, cancelled {name} mode." + (" What did open is still open." if opened else ""))
+            return
         except Exception as e:
             print(f"  (routine step {step.get('label')} failed: {e})")
             missing.append(step.get("label", step["type"]))

@@ -429,14 +429,20 @@ def open_terminal() -> str:
             + " Type there yourself. If you ask me for more, finish there first so you don't both edit at once.")
 
 
-def open_claude_terminal(project: str) -> str:
-    """Tool: a plain interactive Claude Code (or Codex) session in a project folder (no code mode)."""
+def open_claude_terminal(project: str, tool: str = "") -> str:
+    """Tool: a plain interactive Claude Code or Codex session in a project folder (no code mode)."""
+    tool = (tool or "").strip().lower()
+    which = "codex" if tool in ("codex", "chatgpt", "openai") else "claude" if tool.startswith("claude") else backend()
+    name = "Codex" if which == "codex" else "Claude Code"
+    exe = shutil.which(which)
+    if not exe:
+        return f"{name} isn't installed on this PC (I couldn't find the {which} command)."
     folder, options = find_project(project or "")
     if not folder:
         return ("Several projects match: " + "; ".join(options) + ". Ask which.") if options else \
             "I couldn't find that project. Ask the user for the folder's name."
-    _terminal(folder, [shutil.which(backend()) or backend()], f"{label()} - {project_name(folder)}")
-    return f"Opened {label()} in a terminal in {project_name(folder)}."
+    _terminal(folder, [exe], f"{name} - {project_name(folder)}")
+    return f"Opened {name} in a terminal in {project_name(folder)}."
 
 
 # ---------------------------------------------------------------- snapshots --
