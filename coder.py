@@ -52,8 +52,12 @@ _lock = threading.Lock()
 
 # --------------------------------------------------------- Claude Code or Codex --
 def backend() -> str:
-    """'claude' (Claude Code) or 'codex' (OpenAI Codex). CODER=claude|codex in .env decides; otherwise
-    it follows the brain chosen in setup (ChatGPT/Codex brain -> Codex), if that tool is installed."""
+    """'claude' (Claude Code) or 'codex' (OpenAI Codex). What you last asked for by voice wins ("use Codex");
+    then CODER=claude|codex in .env; otherwise it follows the brain chosen in setup (ChatGPT/Codex brain ->
+    Codex), if that tool is installed."""
+    picked = _load().get("tool")
+    if picked in ("claude", "codex") and shutil.which(picked):
+        return picked
     choice = os.getenv("CODER", "").strip().lower()
     if choice in ("claude", "codex"):
         return choice
@@ -155,8 +159,50 @@ START_RE = re.compile(
     r"^(?:hey jarvis[, ]*)?(?:(?:let'?s|let us|can we|can you|i want to|i'd like to|help me|time to|go ahead and|"
     r"please)\s+)*(?:start\s+)?(?:code|coding|program|programming)"
     r"(?:\s+mode)?(?:\s+(?:on|in|for|with)\s+(?:the\s+|my\s+)?(.+?))?(?:\s+project)?[.!?]*$", re.I)
-CLAUDE_RE = re.compile(r"^(?:open|start|use)\s+(?:claude code|claude)\s+(?:on|in|for)\s+(?:the\s+|my\s+)?(.+?)"
-                       r"(?:\s+project)?[.!?]*$", re.I)
+CLAUDE_RE = re.compile(r"^(?:(?:can you|could you|please|let'?s|i want to)\s+)*(?:open|start|use|launch|begin|run)\s+"
+                       r"(?:up\s+)?(?:a\s+|the\s+)?(?:new\s+|fresh\s+)?(?:claude code|claude|codex)(?:\s+(?:session|"
+                       r"terminal|instance))?(?:\s+(?:on|in|for|with)\s+(?:the\s+|my\s+)?(.+?))?"
+                       r"(?:\s+(?:project|folder|directory))?[.!?]*$", re.I)
+# "with Codex", "using Claude Code"... inside a start / switch request
+TOOL_MENTION = re.compile(r"\b(?:with|using|in|via|on|through)\s+(codex|claude(?:\s+code)?)\b|"
+                          r"\b(?:open|start|use|launch|run|new|switch to|change to|go with)\s+(?:a\s+|up\s+)?"
+                          r"(?:new\s+|fresh\s+)?(codex|claude(?:\s+code)?)\b", re.I)
+TOOL_SWITCH = re.compile(r"^(?:(?:okay|ok|actually|can you|could you|please|let'?s)[,\s]+)*(?:use|switch to|change to|"
+                         r"go with|swap to|move to)\s+(codex|claude(?:\s+code)?)(?:\s+instead)?(?:\s+for (?:this|now))?"
+                         r"[.!?]*$", re.I)
+
+
+def tool_mentioned(text: str) -> str | None:
+    """'codex' / 'claude' if the request names one."""
+    m = TOOL_MENTION.search(text or "")
+    if not m:
+        return None
+    return "codex" if (m.group(1) or m.group(2)).lower() == "codex" else "claude"
+
+
+def _without_tool(text: str) -> str:
+    """'let's code with Codex on algorithms' -> 'let's code on algorithms' (for finding the project)."""
+    return re.sub(r"\s+(?:with|using|via|through)\s+(?:codex|claude(?:\s+code)?)\b", "", text or "", flags=re.I)
+
+
+def set_tool(tool: str) -> str:
+    """Use Claude Code or Codex for code mode from now on (until changed). Starts a fresh conversation."""
+    tool = "codex" if tool.lower().startswith("codex") else "claude"
+    name = "Codex" if tool == "codex" else "Claude Code"
+    if not shutil.which(tool):
+        return f"{name} isn't installed on this PC."
+    state = _load()
+    state["tool"] = tool
+    folder = state.get("project", "")
+    sess = state.get("sessions", {}).get(folder, {})
+    state["session_id"] = sess.get("id") if sess.get("backend") == tool else None  # each tool has its own memory
+    _save(state)
+    _activity(f"Code mode · {name}")
+    if tool == "codex":
+        ok, why = codex_sandbox_ok()
+        if not ok:
+            return why
+    return f"Switched to {name}." + (f" Tell me what you'd like done in {project_name(folder)}." if folder else "")
 STOP_RE = re.compile(r"^(?:ok(?:ay)?[, ]*)?(?:stop|exit|leave|end|quit|done|finish(?:ed)?)\s+(?:with\s+)?"
                      r"(?:the\s+)?(?:coding|code mode|code)\b|^(?:i'?m\s+)?done coding\b|^(?:that'?s all|we'?re done)"
                      r"(?:\s+for now)?[.!]*$", re.I)
@@ -272,7 +318,7 @@ def _heard(text: str) -> str:
 
 def match_start(text: str) -> str | None:
     """'let's code on my algorithms project' -> 'algorithms'. '' means "code mode, but which project?"."""
-    text = _heard(text).strip()
+    text = _without_tool(_heard(text)).strip()
     m = START_RE.match(text) or CLAUDE_RE.match(text)
     if not m:
         return None
@@ -291,16 +337,24 @@ def find_project(query: str) -> tuple[str | None, list[str]]:
     return None, [str(f) for _, f in ranked[:3]]
 
 
-def start(folder: str, fresh: bool = False) -> str:
-    """Turn code mode on for this folder and open it in VS Code. fresh: start a new Claude Code
-    conversation instead of continuing the last one there."""
+def start(folder: str, fresh: bool = False, tool: str | None = None) -> str:
+    """Turn code mode on for this folder and open it in VS Code. fresh: start a new conversation instead
+    of continuing the last one there. tool: 'claude' or 'codex' if the user asked for one."""
     folder = str(Path(folder).resolve())
+    if tool in ("claude", "codex"):
+        st = _load()
+        st["tool"] = tool
+        _save(st)
+    if backend() == "codex":
+        ok, why = codex_sandbox_ok()
+        if not ok:
+            return why
     state = _load()
     sessions = state.get("sessions", {})
     # Pick up where you left off in this project if it was recent (within 12 hours).
     prev = {} if fresh else sessions.get(folder, {})
-    if time.time() - prev.get("t", 0) > 12 * 3600:
-        prev = {}
+    if time.time() - prev.get("t", 0) > 12 * 3600 or prev.get("backend", "claude") != backend():
+        prev = {}  # too old, or that conversation was with the other tool
     state.update(project=folder, session_id=prev.get("id"), snapshots=state.get("snapshots", {}))
     _save(state)
     _open_vscode(folder)
@@ -862,11 +916,13 @@ def cancel() -> None:
 
 
 # ------------------------------------------------- tools for Jarvis's brain --
-def start_coding(project: str, new_session: bool = False) -> str:
+def start_coding(project: str, new_session: bool = False, tool: str = "") -> str:
     """Tool: turn code mode on (when the user asks in their own words)."""
+    tool = (tool or "").strip().lower()
+    tool = "codex" if tool in ("codex", "chatgpt", "openai") else "claude" if tool.startswith("claude") else None
     folder, options = find_project(project or "")
     if folder:
-        return start(folder, fresh=new_session)
+        return start(folder, fresh=new_session, tool=tool)
     if options:
         return "Several projects match: " + "; ".join(options) + ". Ask the user which, then call again with its path."
     return "I couldn't find a project by that name. Ask the user for the folder's name."

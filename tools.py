@@ -283,10 +283,10 @@ def set_input_mode(mode: str, read_aloud: bool | None = None) -> str:
     return hud.set_input(mode, read_aloud)
 
 
-def start_coding(project: str, new_session: bool = False) -> str:
+def start_coding(project: str, new_session: bool = False, tool: str = "") -> str:
     import coder
 
-    return coder.start_coding(project, new_session)
+    return coder.start_coding(project, new_session, tool)
 
 
 def stop_coding() -> str:
@@ -342,15 +342,18 @@ TOOLS = [
      _s({"mode": {"type": "string", "enum": ["voice", "text"]},
          "read_aloud": {"type": "boolean", "description": "Text mode only; leave out to keep the current choice"}},
         ["mode"])),
-    (start_coding, "Turn on code mode: from now on the user's requests go to Claude Code, which edits code in "
-     "that project folder (it opens in VS Code). Use when the user wants help coding on / programming a "
-     "project, or to switch code mode to another project. project: the project's name as the user said it, "
-     "or a folder path. new_session: true if they want a fresh Claude Code conversation there.",
-     _s({"project": {"type": "string"}, "new_session": {"type": "boolean"}}, ["project"])),
+    (start_coding, "Turn on code mode: from now on what the user says is passed to Claude Code or Codex, which "
+     "edits code in that project folder (it opens in VS Code, with a live view of the work). Use this whenever "
+     "the user wants to code, or to open / start / use Claude Code or Codex (a 'session' or 'terminal') in a "
+     "project, or to switch code mode to another project. project: the project's name as the user said it, or a "
+     "folder path. new_session: true for a fresh conversation. tool: 'codex' or 'claude' if they named one.",
+     _s({"project": {"type": "string"}, "new_session": {"type": "boolean"},
+         "tool": {"type": "string", "enum": ["claude", "codex", ""]}}, ["project"])),
     (stop_coding, "Turn code mode off.", _s({}, [])),
     (show_claude_code, "In code mode: open the live view window showing what Claude Code is doing.", _s({}, [])),
-    (open_claude_terminal, "Open an interactive Claude Code or Codex session in a terminal, in a project folder, "
-     "for the user to type in themselves (not code mode). tool: 'codex' or 'claude' if the user named one.",
+    (open_claude_terminal, "Only when the user says they want to type into Claude Code or Codex THEMSELVES: open "
+     "a plain interactive terminal session in a project folder. Jarvis can't pass anything into it. For "
+     "'open a Codex session', 'start Claude Code on X' etc., use start_coding instead. tool: 'codex' or 'claude'.",
      _s({"project": {"type": "string"}, "tool": {"type": "string", "enum": ["claude", "codex", ""]}},
         ["project"])),
     # Routines the user builds by talking

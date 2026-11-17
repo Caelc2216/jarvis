@@ -736,7 +736,9 @@ def _sync_coding_chip() -> None:
 def handle_code(text: str, say, listen) -> bool:
     """Code mode requests. Returns True if it handled the message."""
     text = coder._heard(text).strip()  # "cloud code" -> "Claude code"
-    who, plain = coder.addressed(text)  # "Jarvis, ..." / "Claude, ..."
+    who, plain = coder.addressed(text)  # "Jarvis, ..." / "Claude, ..." / "Codex, ..."
+    m = re.match(r"^\W*(?:(?:hey|ok|okay)[,\s]+)?(?:(?:tell|ask)\s+)?(codex|claude)\b", text, re.I)
+    named = (m.group(1).lower() if m else None) if who == "claude" else None  # which one they addressed
     query = coder.match_start(plain) if who != "claude" else None
     if query is not None:
         folder, options = coder.find_project(query) if query else (None, [])
@@ -751,13 +753,18 @@ def handle_code(text: str, say, listen) -> bool:
                 return True
             if not folder:
                 return True
-        say(coder.start(folder))
+        say(coder.start(folder, fresh=bool(re.search(r"\b(?:new|fresh)\b", plain, re.I)),
+                        tool=coder.tool_mentioned(plain)))
         _sync_coding_chip()
         return True
     if not coder.active():
-        # "back to Claude" / "continue coding" / "Claude, fix the tests": straight back into the last project.
+        # "back to Claude" / "continue coding" / "Codex, fix the tests": straight back into the last project.
         back = coder.BACK_TO_CODE.match(text) or re.fullmatch(r"(?:claude(?: code)?|codex)[.!?]*", text, re.I)
         if (back or who == "claude") and coder.last_project():
+            wanted = named or ("codex" if back and re.search(r"\bcodex\b", text, re.I) else
+                               "claude" if back and re.search(r"\bclaude\b", text, re.I) else None)
+            if wanted and wanted != coder.backend():
+                hud.activity(coder.set_tool(wanted))
             note = coder.resume()
             _sync_coding_chip()
             if who == "claude" and not back:
@@ -772,7 +779,14 @@ def handle_code(text: str, say, listen) -> bool:
         say(coder.stop())
         _sync_coding_chip()
         return True
+    if (sw := coder.TOOL_SWITCH.match(plain)) and who != "claude":  # "switch to Codex" / "use Claude instead"
+        say(coder.set_tool(sw.group(1)))
+        _sync_coding_chip()
+        return True
     if who == "claude":
+        if named and named != coder.backend():  # "Codex, ..." while Claude Code is in use: switch, then do it
+            hud.activity(coder.set_tool(named))
+            _sync_coding_chip()
         _code_request(plain, say)
         return True
     current = coder.active()
