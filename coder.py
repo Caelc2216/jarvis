@@ -69,6 +69,19 @@ def label() -> str:
 _sandbox_checked: tuple[bool, str] | None = None
 
 
+def _codex_sandbox_settings() -> list[str]:
+    """Jarvis ignores your personal Codex config (so its add-on tools can't get around the sandbox), but
+    keeps the one setting that says which Windows sandbox Codex set up on this PC."""
+    try:
+        import tomllib
+
+        cfg = tomllib.loads((Path.home() / ".codex" / "config.toml").read_text(encoding="utf-8"))
+        mode = (cfg.get("windows") or {}).get("sandbox")
+    except Exception:
+        mode = None
+    return ["-c", f'windows.sandbox="{mode}"'] if isinstance(mode, str) and mode.isalnum() else []
+
+
 def codex_sandbox_ok() -> tuple[bool, str]:
     """Codex is only ever run inside its sandbox. Check the sandbox actually works on this PC first."""
     global _sandbox_checked
@@ -76,7 +89,8 @@ def codex_sandbox_ok() -> tuple[bool, str]:
         return _sandbox_checked
     exe = shutil.which("codex")
     try:
-        r = subprocess.run([exe, "sandbox", "cmd", "/c", "echo", "jarvis-sandbox-ok"], capture_output=True,
+        r = subprocess.run([exe, "sandbox", *_codex_sandbox_settings(), "cmd", "/c", "echo", "jarvis-sandbox-ok"],
+                           capture_output=True,
                            text=True, encoding="utf-8", errors="replace", timeout=90, creationflags=NO_WINDOW)
         ok = "jarvis-sandbox-ok" in r.stdout
         detail = (r.stderr or r.stdout).strip()
@@ -444,7 +458,7 @@ def snapshot(folder: str, label: str) -> str | None:
         return None
     gd = _git_dir(folder)
     try:
-        if not gd.exists():
+        if not (gd / "HEAD").exists():  # new, or a half-deleted leftover: (re)create the store
             gd.parent.mkdir(parents=True, exist_ok=True)
             subprocess.run(["git", "init", "-q", "--bare", str(gd)], capture_output=True, creationflags=NO_WINDOW)
             _git(folder, "config", "core.bare", "false")
@@ -746,7 +760,10 @@ def _run_codex(exe: str, folder: str, task: str, sid: str | None, on_progress, n
     """One Codex request, sandboxed to the project folder (and offline unless network=True).
     Returns (session id, summary, error, turns, what needed the internet or "")."""
     opts = ["--json", "--skip-git-repo-check", "--ignore-user-config",  # no personal MCP tools: nothing unsandboxed
-            "--sandbox", "workspace-write", "-c", 'approval_policy="never"', "-C", folder]
+            "--sandbox", "workspace-write", "-c", 'approval_policy="never"', *_codex_sandbox_settings(),
+            # only the project folder is writable (not the temp folders Codex allows by default)
+            "-c", "sandbox_workspace_write.exclude_tmpdir_env_var=true",
+            "-c", "sandbox_workspace_write.exclude_slash_tmp=true", "-C", folder]
     if network:
         opts += ["-c", "sandbox_workspace_write.network_access=true"]
     model = os.getenv("CODER_MODEL") or os.getenv("CODEX_MODEL")
