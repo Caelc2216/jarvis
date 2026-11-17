@@ -1,4 +1,4 @@
-"""Connect an Amazon Echo to Jarvis: "Alexa, tell Jarvis that dinner is ready" -> Jarvis says it on the PC.
+"""Connect an Amazon Echo to Jarvis: "Alexa, ask Jarvis Computer to say dinner is ready" -> Jarvis says it on the PC.
 
 Run "Set up Alexa.bat". Needs the Discord remote set up first (Set up Discord.bat).
 It asks for a Discord webhook link (made in a private channel of a server your Jarvis bot is in),
@@ -143,10 +143,10 @@ def main() -> None:
     say("   3. Build tab > Interaction Model > JSON Editor: replace everything with the contents of")
     say(f"      {SKILL / 'interaction_model.json'}   then Save and Build skill.")
     say(f"   4. Code tab: replace lambda_function.py with   {out}   then Save and Deploy.")
-    say("   5. Test tab: set 'Skill testing is enabled in' to Development. Type: tell jarvis computer that dinner is ready")
-    say("   Then on any Echo: 'Alexa, tell Jarvis Computer that dinner is ready.'")
+    say("   5. Test tab: set 'Skill testing is enabled in' to Development. Type: ask jarvis computer to say dinner is ready")
+    say("   Then on any Echo: 'Alexa, ask Jarvis Computer to say dinner is ready.'")
     say("   (Alexa needs a two-word name; to use another, change invocationName in the JSON editor. Avoid")
-    say("   home / house / everyone: 'tell home ...' starts Alexa's own announcement instead of the skill.)")
+    say("   home / house / everyone, and start with ASK: Alexa treats 'tell ...' as her own announcement.)")
 
 
 if __name__ == "__main__":

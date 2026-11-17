@@ -55,6 +55,12 @@ SPEED AND LAPTOPS
   On a laptop or slower PC: run setup.bat and pick Claude or ChatGPT as the brain (the free
   local brain runs ON your PC and is heavy), and add  PERFORMANCE=lite  to .env.
 
+MESSAGES FROM ALEXA (optional; needs the Discord remote)
+  "Alexa, ask Jarvis Computer to say dinner is ready" -> Jarvis chimes and reads it out on the PC.
+  Double-click  Set up Alexa.bat  and follow the steps (a private Discord channel + webhook, then a
+  free private Alexa skill). Start with "ask": Alexa treats "tell ..." as her own announcement.
+  Messages from Alexa are only ever read out, never run as commands.
+
 CODING WITH CLAUDE CODE OR CODEX (needs one installed and signed in; it follows your brain choice,
 or set CODER=claude / CODER=codex in .env)
   Say "let's code on <project name>". Jarvis opens it in VS Code and passes what you ask to

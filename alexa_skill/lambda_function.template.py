@@ -1,4 +1,4 @@
-"""Jarvis Alexa skill: "Alexa, tell Jarvis that dinner is ready" -> Jarvis reads it out on the PC.
+"""Jarvis Alexa skill: "Alexa, ask Jarvis Computer to say dinner is ready" -> Jarvis reads it out on the PC.
 
 This is the skill's code. "Set up Alexa.bat" turns this template into lambda_function.py with your
 two values filled in; copy THAT file into the skill's Code tab in the Alexa developer console.
@@ -55,8 +55,8 @@ def lambda_handler(event, context):
             ok = False
         return _say("Okay, I've told Jarvis." if ok else "Sorry, I couldn't reach Jarvis just now.")
     if name == "AMAZON.HelpIntent":
-        return _say("You can say: tell Jarvis that dinner is ready, and Jarvis will read it out on the computer.",
+        return _say("You can say: ask Jarvis Computer to say dinner is ready, and Jarvis will read it out on the computer.",
                     end=False, reprompt="What should I tell Jarvis?")
     if name in ("AMAZON.CancelIntent", "AMAZON.StopIntent", "AMAZON.NavigateHomeIntent"):
         return _say("Okay.")
-    return _say("Sorry, I didn't catch that. Try: tell Jarvis that dinner is ready.")
+    return _say("Sorry, I didn't catch that. Try: ask Jarvis Computer to say dinner is ready.")
