@@ -59,6 +59,7 @@ MESSAGES FROM ALEXA (optional; needs the Discord remote)
   "Alexa, ask Jarvis Computer to say dinner is ready" -> Jarvis chimes and reads it out on the PC.
   Double-click  Set up Alexa.bat  and follow the steps (a private Discord channel + webhook, then a
   free private Alexa skill). Start with "ask": Alexa treats "tell ..." as her own announcement.
+  Use an Echo: the phone app's new Alexa (Alexa+) turns it into an announcement instead.
   Messages from Alexa are only ever read out, never run as commands.
 
 CODING WITH CLAUDE CODE OR CODEX (needs one installed and signed in; it follows your brain choice,

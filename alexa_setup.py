@@ -145,6 +145,7 @@ def main() -> None:
     say(f"   4. Code tab: replace lambda_function.py with   {out}   then Save and Deploy.")
     say("   5. Test tab: set 'Skill testing is enabled in' to Development. Type: ask jarvis computer to say dinner is ready")
     say("   Then on any Echo: 'Alexa, ask Jarvis Computer to say dinner is ready.'")
+    say("   (Use an Echo, not the phone app: the phone's Alexa+ turns it into an announcement.)")
     say("   (Alexa needs a two-word name; to use another, change invocationName in the JSON editor. Avoid")
     say("   home / house / everyone, and start with ASK: Alexa treats 'tell ...' as her own announcement.)")
 
