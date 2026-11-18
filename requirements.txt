@@ -5,6 +5,7 @@ numpy
 sounddevice
 SpeechRecognition
 pyttsx3
+kokoro-onnx
 requests
 tinytuya
 mcp>=2

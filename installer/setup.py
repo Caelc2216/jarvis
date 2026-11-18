@@ -258,15 +258,51 @@ def step_brain(env):
             run(["cmd", "/c", "codex", "login"])
 
 
+def _get_backup_voice() -> None:
+    """Download the free on-PC voice now (with progress), so it's ready the first time it's needed."""
+    import backup_voice
+
+    if backup_voice.downloaded() and backup_voice.installed():
+        return
+    say("Getting the free voice ready (about 115 MB, once)...")
+    try:
+        if not backup_voice.installed():
+            run([sys.executable, "-m", "pip", "install", "-q", "--disable-pip-version-check", "kokoro-onnx"])
+        shown = {}
+
+        def progress(name, frac):
+            step = int(frac * 10)
+            if shown.get(name) != step:
+                shown[name] = step
+                print(f"\r  {name}: {step * 10}%  ", end="", flush=True)
+
+        backup_voice.download(progress)
+        print()
+        say("  Ready.")
+    except Exception as e:
+        print()
+        say(f"  Couldn't download it right now ({e}). Jarvis will try again by itself later.")
+
+
 def step_voice(env):
     title("3. Jarvis's voice")
+    has_key = bool(env.get("ELEVENLABS_API_KEY"))
+    windows_only = env.get("BACKUP_VOICE", "").lower() == "windows"
     pick = choose("How should Jarvis sound?", [
-        ("Built-in Windows voice", "Free, works right away, sounds a bit robotic."),
-        ("Realistic voice from ElevenLabs", "Free account at elevenlabs.io. You'll paste in a key."),
-    ], 2 if env.get("ELEVENLABS_API_KEY") else 1)
-    if pick == 1:
+        ("Free voice on this PC", "Natural-sounding (Kokoro), no account needed. Downloads about 115 MB once."),
+        ("Realistic voice from ElevenLabs", "Free account at elevenlabs.io (limited each month). You'll paste in a key."),
+        ("Built-in Windows voice", "Works right away with no download, sounds robotic."),
+    ], 2 if has_key else (3 if windows_only else 1))
+    if pick in (1, 3):
         env.pop("ELEVENLABS_API_KEY", None)
         env.pop("ELEVENLABS_VOICE_ID", None)
+    if pick == 3:
+        env["BACKUP_VOICE"] = "windows"
+        return
+    env.pop("BACKUP_VOICE", None)
+    if pick == 1:
+        if not AUTO:
+            _get_backup_voice()
         return
     say("\nOn elevenlabs.io: sign in > Developers > API Keys > Create Key.")
     say("Set 'Text to Speech' and 'Speech to Text' to Access, click Create, then copy the key")
@@ -278,8 +314,10 @@ def step_voice(env):
         env["ELEVENLABS_API_KEY"] = key
         env.setdefault("ELEVENLABS_VOICE_ID", DEFAULT_VOICE)
         say("Saved. Jarvis will use the 'Daniel' voice (calm, British).")
+        say("When the month's ElevenLabs credits run out, it switches to the free voice on this PC.")
     else:
-        say("Keeping the built-in Windows voice for now. Run setup.bat again to try another key.")
+        say("No key, so Jarvis will use the free voice on this PC. Run setup.bat again to try another key.")
+    _get_backup_voice()
 
 
 def step_display(env):

@@ -156,7 +156,7 @@ def _voice_credits() -> list[str]:
     out = [f"  Voice credits (ElevenLabs): {used:,} of {limit:,} used this month ({used * 100 // limit}%), "
            f"resets {reset}"]
     if used >= limit * 0.8:
-        out.append("  Tip: voice credits are nearly gone; Jarvis switches to the Windows voice when they run out. "
+        out.append("  Tip: voice credits are nearly gone; Jarvis switches to its free backup voice when they run out. "
                    "Shorter questions use fewer, or upgrade the ElevenLabs plan.")
     return out
 

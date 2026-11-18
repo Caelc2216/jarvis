@@ -49,6 +49,7 @@ import metrics  # noqa: E402
 import routines  # noqa: E402
 import coder  # noqa: E402
 import speech  # noqa: E402
+import backup_voice  # noqa: E402
 import tools  # noqa: E402  (needs .env loaded first)
 from brains import Router  # noqa: E402
 
@@ -120,7 +121,7 @@ def _credits_ran_out() -> str:
     if already:
         return ""
     when = f" on {time.strftime('%B %d', time.localtime(reset)).replace(' 0', ' ')}" if reset > now else ""
-    return f"I've used up this month's ElevenLabs voice credits, so I'll use the Windows voice until they reset{when}."
+    return f"I've used up this month's ElevenLabs voice credits, so I'll use my backup voice until they reset{when}."
 
 
 def speak(text: str) -> None:
@@ -140,12 +141,22 @@ def speak(text: str) -> None:
                     VOICE_STATE.unlink(missing_ok=True)
                 return
             except Exception as e:
-                print(f"  (ElevenLabs failed: {e}; using built-in voice)")
+                print(f"  (ElevenLabs failed: {e}; using the backup voice)")
                 if "quota" in str(e).lower() or "credits" in str(e).lower():
                     note = _credits_ran_out()
                     if note:
                         say = f"{note} {say}"
                         remote_discord.notify(note + " Upgrading the ElevenLabs plan brings the voice back sooner.")
+        if backup_voice.ready():
+            try:
+                t0 = time.time()
+                backup_voice.speak(say, on_start=lambda secs: (TIMING.__setitem__("tts_s", time.time() - t0),
+                                                               hud.speaking(secs, portion)))
+                return
+            except Exception as e:
+                print(f"  (backup voice failed: {e}; using the Windows voice)")
+        else:
+            backup_voice.download_in_background()  # ready for next time
         import pyttsx3
 
         engine = pyttsx3.init()
@@ -566,6 +577,7 @@ def main() -> None:
     threading.Thread(target=watch_timers, daemon=True).start()
     threading.Thread(target=watch_updates, daemon=True).start()
     threading.Thread(target=metrics.watch_resources, args=(300 if LITE else 60,), daemon=True).start()
+    backup_voice.download_in_background()  # a free on-PC voice for when ElevenLabs runs out or is down
 
     # Texting Jarvis over Discord: its own conversation, so it never mixes with what's said out loud.
     remote_brain, remote_lock = Router(), threading.Lock()

@@ -24,7 +24,7 @@ FILES = [
     "Set up Discord.bat", "Set up Alexa.bat", "Test microphone.bat", "Jarvis Stats.bat",
     # the assistant
     "core/home.py", "core/assistant.py", "core/brains.py", "core/tools.py", "core/apps.py", "core/routines.py",
-    "core/music.py", "core/hud.py", "core/hud.html", "core/speech.py", "core/winlayout.py",
+    "core/music.py", "core/hud.py", "core/hud.html", "core/speech.py", "core/backup_voice.py", "core/winlayout.py",
     "core/windows_control.py", "core/mcp_server.py", "core/paths.py", "core/metrics.py", "core/mic_check.py",
     "core/icon.py", "core/icon.png",
     # optional extras

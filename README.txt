@@ -27,6 +27,11 @@ TEACHING IT
        -> it puts them back exactly there every time.
   - "Add Spotify to gaming" / "delete the gaming routine" / "what routines do I have?"
 
+THE VOICE
+  With an ElevenLabs key Jarvis uses that realistic voice. Without one, or when the month's
+  ElevenLabs credits run out, it uses a free voice that runs on this PC (downloads ~115 MB once).
+  Change it in .env: KOKORO_VOICE=bm_george (or bm_lewis, bm_daniel, bm_fable, bf_emma...).
+
 TEXT JARVIS FROM YOUR PHONE (optional)
   Double-click  Set up Discord.bat  and follow the steps (about 3 minutes).
   It makes a private Discord bot that only YOUR Discord account can use.
