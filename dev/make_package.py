@@ -1,4 +1,4 @@
-"""Build dist/Jarvis.zip: a clean copy to give someone else. Run: python make_package.py
+"""Build dist/Jarvis.zip: a clean copy to give someone else. Run: python dev/make_package.py
 
 Only the files listed below are copied, so your .env (keys), memory, routines, app list,
 light keys and logs can never end up in the zip. Afterwards it checks the zip for anything
@@ -13,17 +13,26 @@ import sys
 import zipfile
 from pathlib import Path
 
-HERE = Path(__file__).parent.resolve()
+HERE = Path(__file__).resolve().parents[1]  # the Jarvis folder
 DIST = HERE / "dist"
 OUT = DIST / "Jarvis"
 
 FILES = [
-    "jarvis.py", "brains.py", "tools.py", "apps.py", "routines.py", "music.py", "hud.py", "hud.html",
-    "winlayout.py", "windows_control.py", "mcp_server.py", "startup.py", "paths.py", "setup.py",
-    "setup_lights.py", "icon.py", "icon.png", "requirements.txt", ".env.example", ".gitignore", "README.txt",
-    "setup.bat", "Start Jarvis.bat", "Stop Jarvis.bat", "Update Jarvis.bat", "updater.py", "version.json",
-    "remote_discord.py", "Set up Discord.bat", "mic_check.py", "Test microphone.bat", "Troubleshoot Jarvis.bat", "metrics.py", "Jarvis Stats.bat", "speech.py", "coder.py", "coder_hook.py",
-    "alexa_setup.py", "Set up Alexa.bat", "alexa_skill/lambda_function.template.py", "alexa_skill/interaction_model.json",
+    # launchers, buttons and docs (top level)
+    "jarvis.py", "startup.py", "README.txt", "version.json", "requirements.txt", ".env.example", ".gitignore",
+    "setup.bat", "Start Jarvis.bat", "Stop Jarvis.bat", "Update Jarvis.bat", "Troubleshoot Jarvis.bat",
+    "Set up Discord.bat", "Set up Alexa.bat", "Test microphone.bat", "Jarvis Stats.bat",
+    # the assistant
+    "core/home.py", "core/assistant.py", "core/brains.py", "core/tools.py", "core/apps.py", "core/routines.py",
+    "core/music.py", "core/hud.py", "core/hud.html", "core/speech.py", "core/winlayout.py",
+    "core/windows_control.py", "core/mcp_server.py", "core/paths.py", "core/metrics.py", "core/mic_check.py",
+    "core/icon.py", "core/icon.png",
+    # optional extras
+    "features/coder.py", "features/coder_hook.py", "features/remote_discord.py",
+    "features/alexa_skill/lambda_function.template.py", "features/alexa_skill/interaction_model.json",
+    # setup and updates
+    "installer/setup.py", "installer/setup_lights.py", "installer/alexa_setup.py", "installer/updater.py",
+    # wake word
     "models/hey_jarvis_v0.1.onnx", "models/melspectrogram.onnx", "models/embedding_model.onnx",
 ]
 

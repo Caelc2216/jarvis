@@ -15,7 +15,7 @@ from pathlib import Path
 import tinytuya
 from dotenv import load_dotenv
 
-HERE = Path(__file__).parent
+HERE = Path(__file__).resolve().parents[1]  # the Jarvis folder
 load_dotenv(HERE / ".env")
 
 access_id = os.getenv("TUYA_ACCESS_ID", "").strip()
@@ -54,7 +54,7 @@ for d in devices:
         "product": d.get("product_name", ""),
     })
 
-(HERE / "devices.json").write_text(json.dumps(saved, indent=2), encoding="utf-8")
+(HERE / "data" / "devices.json").write_text(json.dumps(saved, indent=2), encoding="utf-8")
 print(f"\nSaved {len(saved)} device(s) to devices.json:")
 for d in saved:
     where = d["ip"] or "not found on Wi-Fi right now (switched off at the wall?)"

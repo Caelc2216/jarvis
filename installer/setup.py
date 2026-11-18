@@ -11,7 +11,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-HERE = Path(__file__).parent.resolve()
+HERE = Path(__file__).resolve().parents[1]  # the Jarvis folder
 ENV = HERE / ".env"
 DEFAULT_VOICE = "onwK4e9ZLuTAKqWW03F9"  # ElevenLabs "Daniel": calm British voice
 AUTO = "--defaults" in sys.argv  # for testing: accept every default without asking
@@ -284,7 +284,6 @@ def step_voice(env):
 
 def step_display(env):
     title("4. On-screen display")
-    sys.path.insert(0, str(HERE))
     import winlayout
 
     mons = winlayout.monitors()
@@ -308,7 +307,6 @@ def step_display(env):
 
 def step_mic(env):
     title("Microphone check")
-    sys.path.insert(0, str(HERE))
     import mic_check
 
     for _ in range(4):  # Windows never asks Jarvis for mic permission, so check the switches ourselves

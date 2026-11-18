@@ -17,6 +17,8 @@ import secrets
 import threading
 import time
 
+import home
+
 HELP = ("Text me like you'd talk to me: \"open Steam\", \"what's playing?\", \"pause\", \"set a timer for 20 "
         "minutes\", \"what windows are open?\", \"close Discord\".\n"
         "Extras: **screenshot** (see your screens), **status**, **stats** (speed and CPU/memory), **help**.")
@@ -28,7 +30,7 @@ _owner_id = 0
 # Alexa -> Jarvis: the private Alexa skill posts "<@bot> message" through one Discord webhook
 # (Set up Alexa.bat). Only messages from THAT webhook count, and they're only ever read out loud,
 # never run as commands (anyone near the Echo can talk to it).
-ALEXA_STATE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "alexa_seen.json")
+ALEXA_STATE = str(home.DATA / "alexa_seen.json")
 ALEXA_CATCH_UP_MIN = 15  # after a restart/sleep, read messages up to this old; skip older ones
 
 

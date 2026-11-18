@@ -4,6 +4,6 @@ title Update Jarvis
 cd /d "%~dp0"
 set "PY=py"
 py -c "" >nul 2>&1 || set "PY=python"
-"%PY%" updater.py --apply --restart
+"%PY%" jarvis.py update --apply --restart
 echo.
 pause

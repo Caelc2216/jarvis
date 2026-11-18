@@ -77,5 +77,10 @@ or set CODER=claude / CODER=codex in .env)
   only change the project folder and has no internet; Jarvis asks you before allowing internet.
 
 IF SOMETHING'S WRONG
-  Look at jarvis.log in this folder - it says what Jarvis heard and did.
+  Look at logs\jarvis.log - it says what Jarvis heard and did.
   Your settings are in .env. Keep that file private; it can hold your keys.
+
+WHAT'S IN THIS FOLDER
+  The .bat files are the buttons. Everything Jarvis learns or saves on this PC is in data\,
+  logs are in logs\, and the program itself is in core\ (the assistant), features\ (code mode,
+  Discord, Alexa) and installer\ (setup and updates). Updates never touch data\, logs\ or .env.

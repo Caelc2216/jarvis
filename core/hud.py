@@ -23,6 +23,8 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+import home
+
 HERE = Path(__file__).parent
 PORT = int(os.getenv("HUD_PORT", "8765"))
 import paths  # noqa: E402
@@ -38,10 +40,10 @@ _clients: list[queue.Queue] = []
 _server = None
 
 # Voice or text mode, chosen with the buttons on the display (or by asking Jarvis). Remembered here.
-SETTINGS = HERE / "ui_settings.json"
+SETTINGS = home.DATA / "ui_settings.json"
 # Typed messages and setting changes must carry this token, so no web page you visit can send
 # commands to Jarvis through this local server. Other Jarvis processes (its tools) read it from the file.
-TOKEN_FILE = HERE / ".hud_token"
+TOKEN_FILE = home.DATA / ".hud_token"
 _token = ""
 _typed: queue.Queue = queue.Queue()
 
@@ -378,7 +380,7 @@ def _ensure_window() -> int | None:
                 break
         time.sleep(1)  # let that browser instance finish exiting before starting a new one
     w, h = (int(x) for x in os.getenv("HUD_SIZE", "420x640").lower().split("x"))
-    profile = HERE / ".hud-profile"  # its own Chrome profile, so it never mixes with your tabs
+    profile = home.DATA / "hud-profile"  # its own Chrome profile, so it never mixes with your tabs
     if not BROWSER:
         print("  (HUD needs Chrome or Edge; neither was found)")
         return None

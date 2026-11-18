@@ -40,6 +40,6 @@ if errorlevel 1 (
 )
 
 rem --- 3. The questions ---
-"%PY%" setup.py
+"%PY%" jarvis.py setup
 echo.
 pause

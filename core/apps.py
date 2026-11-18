@@ -14,9 +14,11 @@ import threading
 import time
 from pathlib import Path
 
+import home
+
 HERE = Path(__file__).parent
-INDEX = HERE / "apps.json"
-ALIASES = HERE / "aliases.json"
+INDEX = home.DATA / "apps.json"
+ALIASES = home.DATA / "aliases.json"
 MAX_AGE_S = 6 * 3600
 _lock = threading.Lock()
 

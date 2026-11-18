@@ -60,7 +60,7 @@ def decide(data: dict) -> tuple[str, str, str] | None:
 
 def ask_jarvis(question: str, say: str = "") -> tuple[bool, str]:
     try:
-        token = (HERE / ".hud_token").read_text(encoding="utf-8").strip()
+        token = (HERE.parent / "data" / ".hud_token").read_text(encoding="utf-8").strip()
         req = urllib.request.Request(f"http://127.0.0.1:{PORT}/coder/approve", method="POST",
                                      data=json.dumps({"text": question, "say": say or question}).encode(),
                                      headers={"Content-Type": "application/json", "X-Jarvis-Token": token})

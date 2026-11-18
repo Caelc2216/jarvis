@@ -1,37 +1,33 @@
 # secrets
 .env
-# personal data / things Jarvis learned on this PC
-memory.json
-routines.json
-aliases.json
-apps.json
+# what Jarvis learned or saved on this PC, and its logs
+data/
+logs/
+# the Alexa skill code made by Set up Alexa.bat (has the webhook link in it)
+features/alexa_skill/lambda_function.py
+# caches and build output
+__pycache__/
+.venv/
+dist/
+# made by `python -m tinytuya wizard` (run from the Jarvis folder)
 devices.json
 tinytuya.json
 tuya-raw.json
 snapshot.json
-timers.json
-routine_windows.json
-close_history.json
-update_state.json
-update_announced.txt
-ui_settings.json
-.hud_token
-coder_state.json
-coder_snapshots/
-# logs, caches, generated files
-jarvis.log
-update.log
-__pycache__/
-.venv/
-.hud-profile/
-backups/
-dist/
-jarvis.ico
 # wake word: only the .onnx models are used
 models/*.tflite
 models/silero_vad.onnx
-metrics.jsonl
-coder_live.log
-voice_state.json
-alexa_seen.json
-alexa_skill/lambda_function.py
+# the same files where older versions kept them (moved into data/ and logs/ on first start)
+/*.json
+!/version.json
+/*.log
+/*.jsonl
+/*.txt
+!/README.txt
+!/requirements.txt
+/.hud_token
+/.hud-profile/
+/coder_snapshots/
+/backups/
+/jarvis.ico
+/alexa_skill/lambda_function.py

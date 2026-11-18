@@ -5,4 +5,4 @@ cd /d "%~dp0"
 set "PY=py"
 py -c "" >nul 2>&1 || set "PY=python"
 set JARVIS_PAUSE=1
-"%PY%" metrics.py 24
+"%PY%" jarvis.py stats 24

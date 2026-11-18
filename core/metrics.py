@@ -16,8 +16,10 @@ import threading
 import time
 from pathlib import Path
 
+import home
+
 HERE = Path(__file__).parent
-FILE = HERE / "metrics.jsonl"
+FILE = home.LOGS / "metrics.jsonl"
 MAX_BYTES = 5_000_000
 _lock = threading.Lock()
 
@@ -179,7 +181,7 @@ if __name__ == "__main__":
     try:
         from dotenv import load_dotenv
 
-        load_dotenv(HERE / ".env")
+        load_dotenv(home.ENV)
     except ImportError:
         pass
     hours = float(sys.argv[1]) if len(sys.argv) > 1 else 24

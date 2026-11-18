@@ -7,7 +7,8 @@ It exposes exactly the tools in tools.py and nothing else.
 import os
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path[:0] = [os.path.join(_ROOT, d) for d in ("core", "features", "installer")]
 
 from mcp.server.mcpserver import MCPServer  # noqa: E402  (mcp 2.x)
 

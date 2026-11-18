@@ -8,13 +8,15 @@ import json
 import time
 from pathlib import Path
 
+import home
+
 import winlayout as wl
 
 # Hard limit, enforced here so no brain can loop around it: at most this many windows
 # closed in a rolling window of time (routine closes like "close school" are exempt).
 MAX_CLOSES = 3
 CLOSE_WINDOW_S = 120
-HISTORY = Path(__file__).with_name("close_history.json")
+HISTORY = home.DATA / "close_history.json"
 PROTECTED_APPS = {"claude.exe", "explorer.exe"}  # never close the Claude app or Windows' shell windows
 
 

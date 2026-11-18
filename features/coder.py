@@ -28,9 +28,11 @@ import time
 import uuid
 from pathlib import Path
 
+import home
+
 HERE = Path(__file__).parent.resolve()
-STATE = HERE / "coder_state.json"
-SNAPSHOTS = HERE / "coder_snapshots"
+STATE = home.DATA / "coder_state.json"
+SNAPSHOTS = home.DATA / "coder_snapshots"
 NO_WINDOW = 0x08000000
 MAX_TASK_S = int(os.getenv("CODER_MAX_MINUTES", "30")) * 60
 
@@ -107,7 +109,7 @@ def codex_sandbox_ok() -> tuple[bool, str]:
         why = ("Codex's safety sandbox isn't working on this PC, so I won't let it run code. "
                + ("Its install folder is so deep that Windows can't open its files. Turning on Windows long "
                   "paths, or reinstalling Codex somewhere shorter, fixes it. " if "cannot find the path" in detail
-                  else "The details are in jarvis.log. ")
+                  else "The details are in jarvis.log, in the logs folder. ")
                + "Claude Code works without it, if you have it: set CODER=claude in the .env file.")
         _sandbox_checked = (False, why)
     return _sandbox_checked
@@ -410,7 +412,7 @@ def _open_vscode(folder: str) -> None:
         print(f"  (couldn't open VS Code: {e})")
 
 
-LIVE = HERE / "coder_live.log"
+LIVE = home.LOGS / "coder_live.log"
 LIVE_TITLE = "Claude Code - live (Jarvis)"
 
 

@@ -16,7 +16,7 @@ import urllib.request
 import setup
 from setup import BOLD, CYAN, HERE, RESET, read_env, say, secret_input, title, write_env, yes
 
-SKILL = HERE / "alexa_skill"
+SKILL = HERE / "features" / "alexa_skill"
 UA = {"User-Agent": "DiscordBot (jarvis-alexa-setup, 1.0)"}
 WEBHOOK_RE = re.compile(r"^https://(?:canary\.|ptb\.)?discord(?:app)?\.com/api/webhooks/(\d+)/([\w-]+)$")
 

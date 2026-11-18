@@ -4,6 +4,6 @@ title Jarvis - microphone test
 cd /d "%~dp0"
 set "PY=py"
 py -c "" >nul 2>&1 || set "PY=python"
-"%PY%" setup.py --mic
+"%PY%" jarvis.py setup --mic
 echo.
 pause

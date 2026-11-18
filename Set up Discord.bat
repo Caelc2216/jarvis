@@ -5,6 +5,6 @@ cd /d "%~dp0"
 set "PY=py"
 py -c "" >nul 2>&1 || set "PY=python"
 "%PY%" -m pip install -q --disable-pip-version-check discord.py
-"%PY%" setup.py --discord
+"%PY%" jarvis.py setup --discord
 echo.
 pause

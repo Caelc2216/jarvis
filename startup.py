@@ -6,7 +6,7 @@
     python startup.py stop    stop the Jarvis running in the background right now
     python startup.py start   start it in the background right now
 
-It runs with pythonw (no console window) and writes its output to jarvis.log.
+It runs with pythonw (no console window) and writes its output to logs/jarvis.log.
 """
 
 import os
@@ -35,6 +35,7 @@ def on() -> None:
         "$s.TargetPath=$env:TGT; $s.Arguments=$env:ARGS; $s.WorkingDirectory=$env:WD;"
         "$s.Description='Jarvis voice assistant'; if ($env:ICO) { $s.IconLocation=$env:ICO }; $s.Save()"
     )
+    sys.path.insert(0, str(HERE / "core"))
     import icon
 
     ico = icon.ensure()
@@ -72,7 +73,7 @@ def start() -> None:
     if _running():
         print("Jarvis is already running in the background.")
         return
-    log = HERE / "jarvis.log"
+    log = HERE / "logs" / "jarvis.log"
     size_before = log.stat().st_size if log.exists() else 0
     # Fully on its own: it must outlive whatever started it (the updater, a console window, a terminal).
     flags = 0x00000008 | 0x00000200  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
@@ -94,7 +95,7 @@ def start() -> None:
             f.seek(size_before)
             print("".join(f.read().splitlines(keepends=True)[-25:]) or "(nothing logged)")
     else:
-        print("(no jarvis.log was written)")
+        print("(no logs/jarvis.log was written)")
     print("\nDouble-click 'Troubleshoot Jarvis.bat' to see more, and send a screenshot of it.")
 
 

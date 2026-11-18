@@ -207,7 +207,7 @@ class ClaudeCodeBrain:
         if self.session_id:
             cmd += ["--resume", self.session_id]
         out = subprocess.run(cmd, input=text, capture_output=True, text=True, encoding="utf-8", creationflags=NO_WINDOW,
-                             cwd=HERE, env=_env_without("ANTHROPIC_API_KEY"), timeout=180)
+                             cwd=HERE.parent, env=_env_without("ANTHROPIC_API_KEY"), timeout=180)
         try:
             data = json.loads(out.stdout)
         except json.JSONDecodeError:
@@ -252,7 +252,7 @@ class CodexBrain:
             cmd = [self.exe, "exec", *opts, "-"]
             prompt = f"<instructions>\n{_system()}\n</instructions>\n\n{text}"
         out = subprocess.run(cmd, input=prompt, capture_output=True, text=True, encoding="utf-8", creationflags=NO_WINDOW,
-                             cwd=HERE, env=_env_without("OPENAI_API_KEY"), timeout=240)
+                             cwd=HERE.parent, env=_env_without("OPENAI_API_KEY"), timeout=240)
         reply, error = "", ""
         for line in out.stdout.splitlines():
             try:

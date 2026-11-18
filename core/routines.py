@@ -12,10 +12,12 @@ import re
 import time
 from pathlib import Path
 
+import home
+
 import winlayout as wl
 
 HERE = Path(__file__).parent
-CONFIG = HERE / "routines.json"
+CONFIG = home.DATA / "routines.json"
 
 import paths
 
@@ -221,7 +223,7 @@ def _describe(folder: Path, roots: list[str]) -> str:
 
 
 def ask_for_project(step: dict, say, listen) -> str | None:
-    roots = step.get("projects_folders") or [step.get("projects_folder", str(HERE.parent))]
+    roots = step.get("projects_folders") or [step.get("projects_folder", str(home.ROOT.parent))]
     aliases = {k.lower(): v for k, v in step.get("aliases", {}).items()}
     say(step.get("ask", "Which project?"))
     for attempt in range(3):
@@ -436,7 +438,7 @@ def list_routines() -> str:
         for n, r in cfg["routines"].items())
 
 
-OPENED_FILE = HERE / "routine_windows.json"
+OPENED_FILE = home.DATA / "routine_windows.json"
 
 
 def remember_windows(name: str, hwnds: list[int]) -> None:

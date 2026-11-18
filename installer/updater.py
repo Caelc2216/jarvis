@@ -19,24 +19,26 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-HERE = Path(__file__).parent.resolve()
+HERE = Path(__file__).resolve().parents[1]  # the Jarvis folder
 VERSION_FILE = HERE / "version.json"
-BACKUPS = HERE / "backups"
-STATE = HERE / "update_state.json"
-LOG = HERE / "update.log"
+BACKUPS = HERE / "data" / "backups"
+STATE = HERE / "data" / "update_state.json"
+LOG = HERE / "logs" / "update.log"
 
 # Never overwritten or deleted by an update: everything personal or learned on this PC.
 KEEP = {".env", "memory.json", "routines.json", "aliases.json", "apps.json", "devices.json", "timers.json",
         "routine_windows.json", "close_history.json", "update_state.json", "update_announced.txt", "ui_settings.json", ".hud_token", "coder_state.json", "voice_state.json", "alexa_seen.json",
         "lambda_function.py",
-        "jarvis.log", "update.log", "icon.png", "jarvis.ico", "metrics.jsonl", "tinytuya.json", "snapshot.json",
+        "jarvis.log", "update.log", "jarvis.ico", "metrics.jsonl", "tinytuya.json", "snapshot.json",
         "tuya-raw.json"}
-KEEP_DIRS = {"backups", "coder_snapshots", ".hud-profile", "plugins", ".git", "__pycache__", "dist"}
+KEEP_DIRS = {"data", "logs", "dev", "backups", "coder_snapshots", ".hud-profile", "plugins", ".git", "__pycache__",
+             "dist"}
 
 
 def log(msg: str) -> None:
     line = f"{time.strftime('%Y-%m-%d %H:%M:%S')} {msg}"
     print(msg)
+    LOG.parent.mkdir(exist_ok=True)
     with open(LOG, "a", encoding="utf-8") as f:
         f.write(line + "\n")
 
@@ -86,7 +88,7 @@ def update_available() -> str:
         return ""
 
 
-ANNOUNCED = HERE / "update_announced.txt"
+ANNOUNCED = HERE / "data" / "update_announced.txt"
 
 
 def news_to_announce(max_age_s: int = 3600) -> str:
@@ -138,7 +140,7 @@ def _python() -> str:
 
 def _self_test() -> bool:
     """Does the installed code at least load? (Catches a broken or half-copied update.)"""
-    r = subprocess.run([_python(), "-c", "import jarvis, brains, tools, routines, hud, apps"], cwd=HERE,
+    r = subprocess.run([_python(), "-c", "import jarvis, assistant, brains, tools, routines, hud, apps, coder, remote_discord"], cwd=HERE,
                        capture_output=True, text=True, creationflags=0x08000000, timeout=120)
     if r.returncode != 0:
         log("Self-test failed:\n" + (r.stderr or r.stdout)[-1500:])
@@ -220,7 +222,7 @@ def start_update_in_background() -> str:
     """Used by the voice command: a separate process stops Jarvis, updates, and starts it again."""
     pyw = Path(_python()).with_name(Path(_python()).name.replace("python", "pythonw"))
     exe = str(pyw if pyw.exists() else _python())
-    subprocess.Popen([exe, str(HERE / "updater.py"), "--apply", "--restart"], cwd=HERE,
+    subprocess.Popen([exe, str(HERE / "jarvis.py"), "update", "--apply", "--restart"], cwd=HERE,
                      creationflags=0x08000000 | 0x00000008)  # no window, detached
     return "Updating now. I'll be back in about a minute; say Hey Jarvis when you hear me."
 

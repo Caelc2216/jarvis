@@ -15,6 +15,8 @@ import time
 import urllib.parse
 from pathlib import Path
 
+import home
+
 import requests
 
 from music import list_playlists, music_control, now_playing, play_music, play_playlist
@@ -23,9 +25,9 @@ from apps import forget_nickname, rescan_apps, search_apps
 from routines import add_to_routine, create_routine, delete_routine, list_routines, remove_from_routine
 
 HERE = Path(__file__).parent
-MEMORY_FILE = HERE / "memory.json"
-LIGHTS_FILE = HERE / "devices.json"  # made by `python -m tinytuya wizard`
-TIMERS_FILE = HERE / "timers.json"
+MEMORY_FILE = home.DATA / "memory.json"
+LIGHTS_FILE = home.DATA / "devices.json"  # made by `python -m tinytuya wizard`
+TIMERS_FILE = home.DATA / "timers.json"
 
 # Apps Jarvis may open by name. Add your own: name -> URI, URL or program.
 APPS = {

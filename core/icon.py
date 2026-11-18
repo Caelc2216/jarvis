@@ -1,15 +1,17 @@
 """Jarvis's icon: the glowing orb from the HUD design.
 
 Used for the HUD window's taskbar icon and the Start-with-Windows shortcut.
-Want your own? Put any square picture named icon.png in this folder and delete jarvis.ico;
+Want your own? Put any square picture named icon.png in this folder and delete data/jarvis.ico;
 Jarvis uses yours instead (restart Jarvis to see it).
 """
 
 from pathlib import Path
 
+import home
+
 HERE = Path(__file__).parent
 PNG = HERE / "icon.png"
-ICO = HERE / "jarvis.ico"
+ICO = home.DATA / "jarvis.ico"
 
 
 def _draw(size=512):
